@@ -421,67 +421,72 @@ function ProjectList(p){
             e("div",{style:{textAlign:"right"}},e("div",{style:{fontSize:10,fontFamily:mono,color:du<=7?"#E9A620":"#2471A3",fontWeight:700}},du<=0?"Today":du+"d"),e("div",{style:{fontSize:9,color:"#94a3b8"}},fmtF(m.date))))}))
     ),
 
-    // ═══ 4b. BUDGET TREND LINE CHART ═══
-    totBudget>0&&e("div",{className:"card",style:{padding:mob?"12px":"20px 24px",marginBottom:16,overflow:"hidden"}},
-      e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}},
-        e("span",{style:{fontSize:13,fontWeight:700},title:"Total Budget Plan: IDR "+Number(Math.round(totBudget)).toLocaleString("id-ID")+"\nTotal Realized: IDR "+Number(Math.round(totReal)).toLocaleString("id-ID")+"\nRemaining: IDR "+Number(Math.round(totBudget-totReal)).toLocaleString("id-ID")},"Budget Plan vs Realization Trend"),
-        e("div",{style:{display:"flex",gap:12}},
-          e("div",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:12,height:3,background:"#2471A3",borderRadius:2}}),e("span",{style:{fontSize:10,color:"#94a3b8"}},"Plan")),
-          e("div",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:12,height:3,background:"#10b981",borderRadius:2}}),e("span",{style:{fontSize:10,color:"#94a3b8"}},"Realization")))),
-      (function(){
-        // Build monthly budget data from all projects
-        var MO2=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-        var mPlan=new Array(12).fill(0),mReal=new Array(12).fill(0);
-        projects.forEach(function(pr){
-          if(!pr.budgetPlan)return;
-          // Distribute budget evenly across project months
-          var sm=pr.startDate?new Date(pr.startDate+"T00:00:00").getMonth():0;
-          var em2=pr.endDate?new Date(pr.endDate+"T00:00:00").getMonth():11;
-          if(isNaN(sm))sm=0;if(isNaN(em2)||em2<sm)em2=11;
-          var dur2=em2-sm+1;var perM=pr.budgetPlan/dur2;
-          for(var mi=sm;mi<=em2;mi++)mPlan[mi]+=perM;
-          // Realizations - spread proportionally (assume even if no monthly data)
-          var realPerM=pr.budgetReal/dur2;
-          var cm2=new Date().getMonth();
-          for(var mi2=sm;mi2<=Math.min(em2,cm2);mi2++)mReal[mi2]+=realPerM;
-        });
-        // Cumulate
-        var cumP=[],cumR=[],cp=0,cr=0;
-        for(var k=0;k<12;k++){cp+=mPlan[k];cr+=mReal[k];cumP.push(cp);cumR.push(cr)}
-        var maxV=Math.max.apply(null,cumP.concat(cumR))||1;
-        var W=700,H=200,pL=60,pR=20,pT=20,pB=30,cW=W-pL-pR,cH=H-pT-pB;
-        function xc(i){return pL+i/11*cW}
-        function yc(v){return pT+cH-v/maxV*cH}
-        function fmtK(n){return n>=1e9?(n/1e9).toFixed(1)+"B":n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(0)+"K":""+Math.round(n)}
-        var ppLine=cumP.map(function(v,i){return(i?"L":"M")+xc(i).toFixed(1)+","+yc(v).toFixed(1)}).join(" ");
-        var prLine=cumR.map(function(v,i){return(i?"L":"M")+xc(i).toFixed(1)+","+yc(v).toFixed(1)}).join(" ");
-        var cm3=new Date().getMonth();
-        // Grid values
-        var gridV=[0,.25,.5,.75,1].map(function(f){return Math.round(maxV*f)});
-        return e("svg",{viewBox:"0 0 "+W+" "+H,style:{width:"100%",height:"auto"}},
-          // Grid lines + Y labels
-          gridV.map(function(v){return e("g",{key:v},
-            e("line",{x1:pL,y1:yc(v),x2:W-pR,y2:yc(v),stroke:"#f1f5f9",strokeWidth:1}),
-            e("text",{x:pL-6,y:yc(v)+3,textAnchor:"end",fill:"#cbd5e1",fontSize:9,fontFamily:mono},fmtK(v)))}),
-          // X labels
-          MO2.map(function(m,i){return e("text",{key:i,x:xc(i),y:H-6,textAnchor:"middle",fill:i<=cm3?"#475569":"#cbd5e1",fontSize:9,fontWeight:i===cm3?700:400},m)}),
-          // Quarter separators & labels
-          [0,3,6,9].map(function(qi,qx){return e("g",{key:"q"+qx},
-            qi>0&&e("line",{x1:xc(qi),y1:pT,x2:xc(qi),y2:pT+cH,stroke:"#e2e8f0",strokeWidth:1,strokeDasharray:"3,3"}),
-            e("text",{x:xc(qi)+((xc(qi+2)-xc(qi))/2),y:pT-4,textAnchor:"middle",fill:"#cbd5e1",fontSize:8,fontWeight:600},"Q"+(qx+1)))}),
-          // Plan line + area
-          e("path",{d:ppLine+" L"+xc(11)+","+yc(0)+" L"+xc(0)+","+yc(0)+" Z",fill:"#2471A3",opacity:.06}),
-          e("path",{d:ppLine,fill:"none",stroke:"#2471A3",strokeWidth:2,strokeLinecap:"round"}),
-          cumP.map(function(v,i){return e("circle",{key:"p"+i,cx:xc(i),cy:yc(v),r:3,fill:"#fff",stroke:"#2471A3",strokeWidth:1.5,style:{cursor:"pointer"}},e("title",null,MO2[i]+" Plan: IDR "+Number(Math.round(v)).toLocaleString("id-ID")))}),
-          // Realization line + area (up to current month)
-          e("path",{d:cumR.slice(0,cm3+1).map(function(v,i){return(i?"L":"M")+xc(i).toFixed(1)+","+yc(v).toFixed(1)}).join(" ")+" L"+xc(cm3)+","+yc(0)+" L"+xc(0)+","+yc(0)+" Z",fill:"#10b981",opacity:.06}),
-          e("path",{d:cumR.slice(0,cm3+1).map(function(v,i){return(i?"L":"M")+xc(i).toFixed(1)+","+yc(v).toFixed(1)}).join(" "),fill:"none",stroke:"#10b981",strokeWidth:2,strokeLinecap:"round"}),
-          cumR.slice(0,cm3+1).map(function(v,i){return e("circle",{key:"r"+i,cx:xc(i),cy:yc(v),r:3,fill:"#fff",stroke:"#10b981",strokeWidth:1.5,style:{cursor:"pointer"}},e("title",null,MO2[i]+" Realized: IDR "+Number(Math.round(v)).toLocaleString("id-ID")))}),
-          // Today marker
-          e("line",{x1:xc(cm3),y1:pT,x2:xc(cm3),y2:pT+cH,stroke:"#94a3b8",strokeWidth:1,strokeDasharray:"4,3"}),
-          e("text",{x:xc(cm3),y:pT-4,textAnchor:"middle",fill:"#94a3b8",fontSize:8},"Today")
+    // ═══ 4b. BUDGET HEALTH GAUGE + PER-PROJECT BARS ═══
+    totBudget>0&&e("div",{className:"card",style:{padding:mob?"12px":"20px 24px",marginBottom:16}},
+      e("div",{style:{fontSize:13,fontWeight:700,marginBottom:16}},"Budget Health"),
+      e("div",{style:{display:mob?"block":"flex",gap:32,alignItems:"flex-start"}},
+        // Gauge (left side)
+        e("div",{style:{textAlign:"center",flexShrink:0,marginBottom:mob?16:0}},
+          e("div",{style:{width:180,height:100,margin:"0 auto 8px"}},
+            e("svg",{viewBox:"0 0 200 110",style:{width:"100%"}},
+              // Background arc
+              e("path",{d:"M 15 100 A 85 85 0 0 1 185 100",fill:"none",stroke:"#e2e8f0",strokeWidth:16,strokeLinecap:"round"}),
+              // Green zone (0-70%)
+              e("path",{d:"M 15 100 A 85 85 0 0 1 185 100",fill:"none",stroke:"#10b981",strokeWidth:16,strokeLinecap:"round",strokeDasharray:Math.round(.7*267)+",267",opacity:.15}),
+              // Amber zone (70-90%)
+              e("path",{d:"M 15 100 A 85 85 0 0 1 185 100",fill:"none",stroke:"#E9A620",strokeWidth:16,strokeLinecap:"round",strokeDasharray:Math.round(.9*267)+",267",opacity:.1}),
+              // Red zone (90-100%)
+              e("path",{d:"M 15 100 A 85 85 0 0 1 185 100",fill:"none",stroke:"#E35B2D",strokeWidth:16,strokeLinecap:"round",strokeDasharray:"267,267",opacity:.06}),
+              // Active arc (utilization)
+              e("path",{d:"M 15 100 A 85 85 0 0 1 185 100",fill:"none",stroke:budUtil>90?"#E35B2D":budUtil>70?"#E9A620":"#10b981",strokeWidth:16,strokeLinecap:"round",strokeDasharray:Math.round(Math.min(budUtil,100)/100*267)+",267",style:{transition:"all .8s"}}),
+              // Needle
+              (function(){var angle=-90+budUtil/100*180;var rad=angle*Math.PI/180;var nx=100+65*Math.cos(rad);var ny=100+65*Math.sin(rad);
+                return e("g",null,e("line",{x1:100,y1:100,x2:nx,y2:ny,stroke:"#1B2A4A",strokeWidth:2.5,strokeLinecap:"round"}),e("circle",{cx:100,cy:100,r:5,fill:"#1B2A4A"}))})(),
+              // Value text
+              e("text",{x:100,y:82,textAnchor:"middle",fontSize:28,fontWeight:800,fontFamily:mono,fill:budUtil>90?"#E35B2D":budUtil>70?"#E9A620":"#10b981"},budUtil+"%"),
+              e("text",{x:100,y:97,textAnchor:"middle",fontSize:10,fontWeight:600,fill:"#64748b"},budUtil>90?"OVER BUDGET":budUtil>70?"CAUTION":"HEALTHY"),
+              // Scale labels
+              e("text",{x:18,y:108,fontSize:8,fill:"#cbd5e1"},"0%"),
+              e("text",{x:92,y:12,textAnchor:"middle",fontSize:8,fill:"#cbd5e1"},"50%"),
+              e("text",{x:178,y:108,textAnchor:"end",fontSize:8,fill:"#cbd5e1"},"100%")
+            )),
+          // Summary numbers below gauge
+          e("div",{style:{display:"flex",justifyContent:"center",gap:20,fontSize:11}},
+            e("div",null,e("div",{style:{fontSize:9,color:"#94a3b8",fontWeight:600}},"PLAN"),e("div",{style:{fontWeight:800,fontFamily:mono,color:"#2471A3"}},fmtIDR(totBudget))),
+            e("div",null,e("div",{style:{fontSize:9,color:"#94a3b8",fontWeight:600}},"REALIZED"),e("div",{style:{fontWeight:800,fontFamily:mono,color:"#10b981"}},fmtIDR(totReal))),
+            e("div",null,e("div",{style:{fontSize:9,color:"#94a3b8",fontWeight:600}},"REMAINING"),e("div",{style:{fontWeight:800,fontFamily:mono,color:totBudget-totReal<0?"#E35B2D":"#64748b"}},fmtIDR(totBudget-totReal)))
+          )
+        ),
+        // Per-project horizontal bars (right side)
+        e("div",{style:{flex:1,minWidth:0}},
+          e("div",{style:{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:10}},"Per-Project Budget"),
+          nonArch.filter(function(pr){return pr.budgetPlan>0}).map(function(pr){
+            var bpct=pr.budgetUtil||0;
+            var barMax=Math.max.apply(null,nonArch.map(function(p2){return Number(p2.budgetPlan)||0}))||1;
+            var planW=Math.round(Number(pr.budgetPlan)/barMax*100);
+            var realW=Number(pr.budgetPlan)>0?Math.round(Number(pr.budgetReal)/Number(pr.budgetPlan)*planW):0;
+            return e("div",{key:pr.id,style:{marginBottom:12,cursor:"pointer"},onClick:function(){p.onSelect(pr.id)},
+              title:"Plan: IDR "+Number(pr.budgetPlan).toLocaleString("id-ID")+"\nRealized: IDR "+Number(pr.budgetReal).toLocaleString("id-ID")+"\nRemaining: IDR "+Number(pr.budgetPlan-pr.budgetReal).toLocaleString("id-ID")},
+              e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}},
+                e("span",{style:{fontSize:12,fontWeight:600,color:"#475569"}},pr.name),
+                e("span",{style:{fontSize:11,fontWeight:700,fontFamily:mono,color:bpct>90?"#E35B2D":bpct>70?"#E9A620":"#10b981"}},bpct+"%")),
+              // Stacked bar: plan (background) + realized (overlay)
+              e("div",{style:{position:"relative",height:18,borderRadius:6,overflow:"hidden",background:"#f1f5f9"}},
+                e("div",{style:{position:"absolute",top:0,left:0,height:"100%",width:planW+"%",background:"#2471A3",borderRadius:6,opacity:.2}}),
+                e("div",{style:{position:"absolute",top:0,left:0,height:"100%",width:realW+"%",background:bpct>90?"#E35B2D":bpct>70?"#E9A620":"#10b981",borderRadius:6,transition:"width .5s"}}),
+                e("div",{style:{position:"relative",display:"flex",justifyContent:"space-between",alignItems:"center",height:"100%",padding:"0 8px",fontSize:9,fontWeight:600}},
+                  e("span",{style:{color:realW>30?"#fff":"#64748b"}},fmtIDR(pr.budgetReal)),
+                  e("span",{style:{color:"#94a3b8"}},fmtIDR(pr.budgetPlan)))
+              )
+            )
+          }),
+          nonArch.filter(function(pr){return pr.budgetPlan>0}).length===0&&e("div",{style:{fontSize:11,color:"#cbd5e1",textAlign:"center",padding:16}},"No budget data"),
+          // Legend
+          e("div",{style:{display:"flex",gap:16,marginTop:8}},
+            e("div",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:10,height:10,borderRadius:3,background:"#2471A3",opacity:.3}}),e("span",{style:{fontSize:9,color:"#94a3b8"}},"Plan")),
+            e("div",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:10,height:10,borderRadius:3,background:"#10b981"}}),e("span",{style:{fontSize:9,color:"#94a3b8"}},"Realized")))
         )
-      })()
+      )
     ),
 
     // ═══ 4c. PROJECTS BY PRIORITY ═══
