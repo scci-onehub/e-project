@@ -1091,9 +1091,37 @@ function ProjRisks(p){var risks=p.risks,tasks=p.tasks,riskHist=p.riskHist,admin=
     // Try just extracting any readable part
     if(lb.length>8)return lb.substring(0,6);
     return lb||"#"+(i+1)});
+
+  // ── Computed risk metrics ──
+  var openR=risks.filter(function(r){return r.status==="Open"});
+  var closedR=risks.filter(function(r){return r.status==="Closed"});
+  var withMit=risks.filter(function(r){return r.mitigation&&r.mitigation.trim()}).length;
+  var noMit=risks.length-withMit;
+  // Category breakdown
+  var cats={};risks.forEach(function(r){var c=r.category||"Uncategorized";cats[c]=(cats[c]||0)+1});
+  var catArr=Object.keys(cats).map(function(k){return{name:k,count:cats[k]}}).sort(function(a,b){return b.count-a.count});
+  var catMax=catArr.length>0?catArr[0].count:1;
+  var catColors={"Regulatory":"#2471A3","Financial":"#E9A620","External":"#E35B2D","Internal":"#17B8A6","Operational":"#1B2A4A","Technical":"#6366f1","Uncategorized":"#94a3b8"};
+  // Top 3 critical open risks by score
+  var top3=openR.map(function(r){return Object.assign({},r,{score:(Number(r.impact)||3)*(Number(r.likelihood)||3)})}).sort(function(a,b){return b.score-a.score}).slice(0,3);
+
   return e("div",{style:{animation:"fadeIn .3s"}},
-    e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:20}},e("h2",{style:{fontSize:20,fontWeight:700}},"Risk Monitor"),admin&&e("button",{className:"btn btn-primary",onClick:function(){p.setShowAddRisk(true)}},"\u2795 Add Risk")),
-    // Row 1: Risk Level + Trend
+    e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:16}},e("h2",{style:{fontSize:20,fontWeight:700}},"Risk Monitor"),admin&&e("button",{className:"btn btn-primary",onClick:function(){p.setShowAddRisk(true)}},"\u2795 Add Risk")),
+
+    // ═══ ROW 0: RISK SUMMARY KPIs ═══
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(4,1fr)",gap:mob?8:12,marginBottom:16}},
+      [{l:"Total Risks",v:risks.length,i:"\uD83D\uDCCB",c:"#1B2A4A",bg:"#f8fafc"},
+       {l:"Open",v:openR.length,i:"\u26A0\uFE0F",c:"#E9A620",bg:"#FDF2D0"},
+       {l:"Closed",v:closedR.length,i:"\u2705",c:"#10b981",bg:"#d1fae5"},
+       {l:"Resolution Rate",v:risks.length>0?Math.round(closedR.length/risks.length*100)+"%":"0%",i:"\uD83D\uDCC8",c:"#2471A3",bg:"#E8F1F8"}
+      ].map(function(s,i){return e("div",{key:i,className:"card",style:{padding:"14px 16px",background:s.bg,borderColor:"transparent"}},
+        e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+          e("div",null,
+            e("div",{style:{fontSize:22,fontWeight:800,fontFamily:mono,color:s.c}},s.v),
+            e("div",{style:{fontSize:10,color:"#64748b",fontWeight:600,marginTop:2}},s.l)),
+          e("div",{style:{fontSize:20}},s.i)))})),
+
+    // ═══ ROW 1: RISK LEVEL + TREND ═══
     e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:mob?10:16,marginBottom:16}},
       e("div",{className:"card",style:{padding:20,textAlign:"center"}},e("h3",{style:{fontSize:13,fontWeight:700,marginBottom:14}},"Risk Level"),
         e("div",{style:{width:140,height:80,margin:"0 auto 10px"}},e("svg",{viewBox:"0 0 180 100",style:{width:"100%"}},e("path",{d:"M 10 90 A 80 80 0 0 1 170 90",fill:"none",stroke:"#e2e8f0",strokeWidth:14,strokeLinecap:"round"}),e("path",{d:"M 10 90 A 80 80 0 0 1 170 90",fill:"none",stroke:rl.color,strokeWidth:14,strokeLinecap:"round",strokeDasharray:Math.round(rs.pct/100*251)+",251",style:{transition:"all .8s"}}),e("text",{x:90,y:72,textAnchor:"middle",fontSize:26,fontWeight:700,fontFamily:mono,fill:rl.color},rs.pct+"%"),e("text",{x:90,y:92,textAnchor:"middle",fontSize:10,fontWeight:600,fill:rl.color},rl.level))),
@@ -1101,17 +1129,13 @@ function ProjRisks(p){var risks=p.risks,tasks=p.tasks,riskHist=p.riskHist,admin=
       e("div",{className:"card",style:{padding:20}},e("h3",{style:{fontSize:13,fontWeight:700,marginBottom:14}},"Trend"),
         riskHist.length===0?e("div",{style:{textAlign:"center",padding:24,color:"#94a3b8",fontSize:12}},"No snapshots yet. Click Snapshot to record."):
         e("svg",{viewBox:"0 0 300 130",style:{width:"100%"}},
-          // Grid lines
           [0,25,50,75,100].map(function(v){return e("line",{key:v,x1:30,y1:10+(100-v)/100*90,x2:280,y2:10+(100-v)/100*90,stroke:"#f1f5f9",strokeWidth:1})}),
           [0,25,50,75,100].map(function(v){return e("text",{key:"l"+v,x:26,y:10+(100-v)/100*90+3,textAnchor:"end",fill:"#cbd5e1",fontSize:7},v)}),
-          // Line
           riskHist.length>1&&e("path",{d:riskHist.map(function(h,i){return(i?"L":"M")+(30+i/(riskHist.length-1)*250).toFixed(1)+","+(10+(100-Number(h.pct))/100*90).toFixed(1)}).join(" "),fill:"none",stroke:rl.color,strokeWidth:2.5,strokeLinecap:"round"}),
-          // Points + labels
           riskHist.map(function(h,i){var xp=30+(riskHist.length===1?125:i/(riskHist.length-1)*250),yp=10+(100-Number(h.pct))/100*90,lv=getRL(Number(h.pct));
             return e("g",{key:i},e("circle",{cx:xp,cy:yp,r:3.5,fill:"#fff",stroke:lv.color,strokeWidth:2}),
               e("text",{x:xp,y:yp-8,textAnchor:"middle",fill:lv.color,fontSize:8,fontWeight:700},h.pct+"%"),
               e("text",{x:xp,y:118,textAnchor:"middle",fill:"#94a3b8",fontSize:7,transform:"rotate(-30 "+xp+" 118)"},trendLabels[i]))})),
-        // Snapshot management
         admin&&riskHist.length>0&&e("div",{style:{marginTop:10,borderTop:"1px solid #f1f5f9",paddingTop:8}},
           e("button",{style:{background:"none",border:"none",cursor:"pointer",fontSize:10,color:"#94a3b8",fontFamily:"inherit"},onClick:function(){_showSnaps[1](!_showSnaps[0])}},_showSnaps[0]?"\u25BC Hide Snapshots ("+riskHist.length+")":"\u25B6 Manage Snapshots ("+riskHist.length+")"),
           _showSnaps[0]&&e("div",{style:{marginTop:6}},
@@ -1122,9 +1146,60 @@ function ProjRisks(p){var risks=p.risks,tasks=p.tasks,riskHist=p.riskHist,admin=
                 e("button",{className:"del-icon",style:{width:20,height:20,fontSize:9},onClick:function(){delSnap(h)}},"\u2715"))
             })))
       )),
-    // Row 2: Heat Map (left) + All Risks (right)
+
+    // ═══ ROW 2: RISK BY CATEGORY + TOP 3 CRITICAL ═══
     e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:mob?10:16,marginBottom:16}},
-      // Heat Map
+      // Risk by Category
+      e("div",{className:"card",style:{padding:"20px"}},
+        e("h3",{style:{fontSize:13,fontWeight:700,marginBottom:14}},"Risk by Category"),
+        catArr.length===0?e("div",{style:{textAlign:"center",padding:20,color:"#94a3b8",fontSize:12}},"No risks"):
+        catArr.map(function(c){
+          var pct2=Math.round(c.count/risks.length*100);
+          var col=catColors[c.name]||"#64748b";
+          return e("div",{key:c.name,style:{marginBottom:10}},
+            e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}},
+              e("span",{style:{fontSize:12,fontWeight:600,color:"#475569"}},c.name),
+              e("span",{style:{fontSize:11,fontFamily:mono,fontWeight:700,color:col}},c.count+" ("+pct2+"%)")),
+            e("div",{style:{height:8,background:"#f1f5f9",borderRadius:4,overflow:"hidden"}},
+              e("div",{style:{height:"100%",width:Math.round(c.count/catMax*100)+"%",background:col,borderRadius:4,transition:"width .5s"}})))
+        }),
+        // Mitigation status bar at bottom
+        e("div",{style:{marginTop:14,borderTop:"1px solid #f1f5f9",paddingTop:12}},
+          e("div",{style:{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:6}},"Mitigation Coverage"),
+          e("div",{style:{display:"flex",height:12,borderRadius:6,overflow:"hidden",marginBottom:4}},
+            withMit>0&&e("div",{style:{flex:withMit,background:"#10b981"},title:withMit+" with mitigation"}),
+            noMit>0&&e("div",{style:{flex:noMit,background:"#FDEAE4"},title:noMit+" without mitigation"})),
+          e("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8"}},
+            e("span",null,"\u2705 "+withMit+" with plan ("+(risks.length>0?Math.round(withMit/risks.length*100):0)+"%)"),
+            e("span",{style:{color:noMit>0?"#E35B2D":"#94a3b8"}},"\u26A0 "+noMit+" no plan")))
+      ),
+      // Top 3 Critical Risks
+      e("div",{className:"card",style:{padding:"20px",borderLeft:top3.length>0?"4px solid #E35B2D":"4px solid #e2e8f0"}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:14}},
+          e("span",{style:{fontSize:16}},"\uD83D\uDD25"),
+          e("h3",{style:{fontSize:13,fontWeight:700}},"Top Critical Risks"),
+          openR.length>0&&e("span",{style:{fontSize:10,fontWeight:700,background:"#FDEAE4",color:"#E35B2D",padding:"1px 6px",borderRadius:8}},openR.length+" open")),
+        top3.length===0?e("div",{style:{textAlign:"center",padding:24,color:"#10b981",fontSize:13}},"\u2705 No open risks — great job!"):
+        top3.map(function(r,i){
+          var lt=tasks.find(function(t){return t.id===r.linkedTaskId});
+          var hasMit=r.mitigation&&r.mitigation.trim();
+          return e("div",{key:r.id,style:{padding:"12px",marginBottom:i<top3.length-1?8:0,background:i===0?"#FFF5F3":"#fafbfc",borderRadius:10,border:"1px solid "+(i===0?"#FDEAE4":"#f1f5f9")}},
+            // Header: rank + level badge + score
+            e("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:6}},
+              e("div",{style:{width:22,height:22,borderRadius:"50%",background:i===0?"#E35B2D":i===1?"#E9A620":"#2471A3",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,flexShrink:0}},i+1),
+              e(Badge,{bg:rbg(r.level),color:rc(r.level)},r.level),
+              e("span",{style:{fontSize:10,fontFamily:mono,fontWeight:700,color:"#475569"}},"I:"+r.impact+"\u00D7L:"+r.likelihood+"="+r.score),
+              e("div",{style:{flex:1}}),
+              e("span",{style:{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:hasMit?"#d1fae5":"#FDEAE4",color:hasMit?"#10b981":"#E35B2D"}},hasMit?"\u2705 Mitigated":"\u26A0 No plan")),
+            e("div",{style:{fontSize:12,fontWeight:700,marginBottom:2}},r.title),
+            hasMit&&e("div",{style:{fontSize:11,color:"#64748b",marginBottom:2}},r.mitigation),
+            lt&&e("div",{style:{fontSize:10,color:"#2471A3"}},"\u2192 "+lt.name))
+        })
+      )
+    ),
+
+    // ═══ ROW 3: HEAT MAP + ALL RISKS ═══
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:mob?10:16,marginBottom:16}},
       e("div",{className:"card",style:{padding:"20px"}},
         e("h3",{style:{fontSize:13,fontWeight:700,marginBottom:14}},"Risk Heat Map"),
         e(HeatMap5x5,{risks:risks}),
@@ -1133,7 +1208,6 @@ function ProjRisks(p){var risks=p.risks,tasks=p.tasks,riskHist=p.riskHist,admin=
             return e("div",{key:l,style:{flex:1,textAlign:"center",background:rbg(l),borderRadius:8,padding:"8px 4px"}},
               e("div",{style:{fontSize:16,fontWeight:700,fontFamily:mono,color:rc(l)}},cnt),
               e("div",{style:{fontSize:8,fontWeight:600,color:rc(l)}},l+" Open"))}))),
-      // All Risks list
       e("div",{className:"card",style:{padding:"20px",maxHeight:500,overflowY:"auto"}},
         e("h3",{style:{fontSize:13,fontWeight:700,marginBottom:14}},"All Risks ("+risks.length+")"),
         risks.length===0?e("div",{style:{textAlign:"center",padding:24,color:"#94a3b8",fontSize:12}},"No risks registered"):
