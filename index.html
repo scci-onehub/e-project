@@ -336,7 +336,7 @@ function ProjectList(p){
     e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:mob?10:14,marginBottom:16}},
 
       // Budget Analysis
-      e("div",{className:"card",style:{padding:"18px 20px"}},
+      e("div",{className:"card",style:{padding:"18px 20px"},title:"Total Budget Plan: IDR "+Number(totBudget).toLocaleString("id-ID")+"\nTotal Realized: IDR "+Number(totReal).toLocaleString("id-ID")+"\nRemaining: IDR "+Number(totBudget-totReal).toLocaleString("id-ID")+"\nUtilization: "+budUtil+"%"},
         e("div",{style:{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:12}},"BUDGET ANALYSIS"),
         e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:10}},
           e("div",null,e("div",{style:{fontSize:9,color:"#94a3b8",fontWeight:600}},"TOTAL PLAN"),e("div",{style:{fontSize:15,fontWeight:800,fontFamily:mono,color:"#2471A3"}},fmtIDR(totBudget))),
@@ -346,7 +346,7 @@ function ProjectList(p){
         // Per-project bars
         e("div",{style:{marginTop:12,borderTop:"1px solid #f1f5f9",paddingTop:8}},
           nonArch.filter(function(pr){return pr.budgetPlan>0}).slice(0,5).map(function(pr){
-            return e("div",{key:pr.id,style:{marginBottom:6,cursor:"pointer"},onClick:function(){p.onSelect(pr.id)}},
+            return e("div",{key:pr.id,style:{marginBottom:6,cursor:"pointer"},onClick:function(){p.onSelect(pr.id)},title:pr.name+"\nBudget Plan: IDR "+Number(pr.budgetPlan).toLocaleString("id-ID")+"\nRealized: IDR "+Number(pr.budgetReal).toLocaleString("id-ID")+"\nRemaining: IDR "+Number(pr.budgetPlan-pr.budgetReal).toLocaleString("id-ID")+"\nUtilization: "+pr.budgetUtil+"%"},
               e("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:2}},
                 e("span",{style:{color:"#475569",fontWeight:500}},pr.name.length>18?pr.name.substring(0,18)+"..":pr.name),
                 e("span",{style:{fontFamily:mono,fontWeight:600,color:pr.budgetUtil>90?"#E35B2D":"#64748b"}},fmtIDR(pr.budgetReal))),
@@ -807,6 +807,9 @@ function ProjOverview(p){var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics
         e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
           e("h3",{style:{fontSize:14,fontWeight:700}},"Project Timeline"),
           e("button",{onClick:function(){p.setTab("Timeline")},style:{fontSize:11,color:"#2471A3",background:"none",border:"none",cursor:"pointer",fontWeight:600}},"Details \u2192")),
+        // Quarter labels
+        e("div",{style:{display:"flex",marginBottom:2,paddingLeft:100}},
+          [{l:"Q1",span:3},{l:"Q2",span:3},{l:"Q3",span:3},{l:"Q4",span:3}].map(function(q,qi){return e("div",{key:qi,style:{flex:q.span,textAlign:"center",fontSize:7,fontWeight:700,color:"#cbd5e1"}},q.l)})),
         // Month headers
         e("div",{style:{display:"flex",marginBottom:6,paddingLeft:100}},
           MO.map(function(m,i){return e("div",{key:i,style:{flex:1,textAlign:"center",fontSize:8,fontWeight:i===cm?700:400,color:i===cm?"#2471A3":"#94a3b8"}},m)})),
@@ -1033,9 +1036,16 @@ function ProjGantt(p){var tasks=p.tasks;var _hover=useState(null);var cm=getCM()
   var colors=["#1B2A4A","#2471A3","#17B8A6","#1CD4C6","#E9A620","#E35B2D","#10b981"];
   return e("div",{style:{animation:"fadeIn .3s"}},e("h2",{style:{fontSize:20,fontWeight:700,marginBottom:20}},"Timeline"),
     e("div",{className:"card",style:{overflow:"hidden"}},e("div",{style:{overflowX:"auto",minWidth:700}},
-      e("div",{style:{display:"flex",height:44,borderBottom:"2px solid #e2e8f0",background:"#fff"}},
-        e("div",{style:{width:200,flexShrink:0,padding:"12px 16px",fontSize:13,fontWeight:700,borderRight:"1px solid #e2e8f0"}},"Task"),
-        e("div",{style:{flex:1,display:"flex"}},MO.map(function(m,i){return e("div",{key:i,style:{flex:1,textAlign:"center",padding:"12px 0",fontSize:11,fontWeight:i===cm?700:400,color:i===cm?"#2471A3":"#94a3b8",background:i===cm?"#EBF5FB":"transparent",borderRight:"1px solid #f1f5f9"}},m)}))),
+      // Quarter header row
+      e("div",{style:{display:"flex",height:24,borderBottom:"1px solid #f1f5f9",background:"#f8fafc"}},
+        e("div",{style:{width:200,flexShrink:0,borderRight:"1px solid #e2e8f0"}}),
+        e("div",{style:{flex:1,display:"flex"}},
+          [{l:"Q1",span:3},{l:"Q2",span:3},{l:"Q3",span:3},{l:"Q4",span:3}].map(function(q,qi){
+            return e("div",{key:qi,style:{flex:q.span,textAlign:"center",fontSize:10,fontWeight:700,color:"#2471A3",padding:"4px 0",borderRight:qi<3?"1px dashed #e2e8f0":"none"}},q.l)}))),
+      // Month header row
+      e("div",{style:{display:"flex",height:36,borderBottom:"2px solid #e2e8f0",background:"#fff"}},
+        e("div",{style:{width:200,flexShrink:0,padding:"8px 16px",fontSize:13,fontWeight:700,borderRight:"1px solid #e2e8f0"}},"Task"),
+        e("div",{style:{flex:1,display:"flex"}},MO.map(function(m,i){return e("div",{key:i,style:{flex:1,textAlign:"center",padding:"8px 0",fontSize:11,fontWeight:i===cm?700:400,color:i===cm?"#2471A3":"#94a3b8",background:i===cm?"#EBF5FB":"transparent",borderRight:"1px solid #f1f5f9"}},m)}))),
       tasks.map(function(t,ti){
         var pr=tprog(t),sm=Number(t.startMonth)||0,em=t.milestone?new Date(t.milestone.date+"T00:00:00").getMonth():11,isO=_hover[0]===t.id;
         var items=[];
