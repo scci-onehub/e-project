@@ -38,7 +38,34 @@ body{font-family:'DM Sans','Segoe UI',system-ui,sans-serif;background:#f1f5f9;co
 input[type="checkbox"]{width:18px;height:18px;accent-color:#2471A3;cursor:pointer;margin-top:1px;flex-shrink:0}
 input[type="checkbox"]:disabled{cursor:default;opacity:.6}
 .label{font-size:12px;font-weight:600;color:#64748b;display:block;margin-bottom:4px}
-@media(max-width:768px){.grid-2{grid-template-columns:1fr!important}.grid-3{grid-template-columns:1fr!important}.header-stats{flex-direction:column;align-items:flex-start!important}.main-content{padding:16px!important}.tab-nav{padding:0 12px!important;overflow-x:auto}.admin-bar{padding:8px 16px;flex-wrap:wrap}}
+@media(max-width:768px){
+  .main-content{padding:12px 14px!important}
+  .card{border-radius:10px!important}
+  .project-card{padding:16px!important}
+  .modal{width:95%!important;padding:20px!important;max-height:85vh!important}
+  .tab-btn{padding:10px 12px!important;font-size:12px!important}
+  .btn-lg{padding:10px 16px!important;font-size:12px!important}
+  table{font-size:11px!important}
+  table th,table td{padding:6px 5px!important}
+  /* Top bar */
+  .top-bar-title{display:none!important}
+  /* Force single column on all grids */
+  div[style*="gridTemplateColumns"]{grid-template-columns:1fr!important}
+  /* But allow 2-col for small stat cards */
+  .grid-2{grid-template-columns:1fr!important}
+  .grid-3{grid-template-columns:1fr!important}
+  /* Tab nav scroll */
+  .tab-nav{overflow-x:auto!important;-webkit-overflow-scrolling:touch}
+  /* Welcome banner */
+  div[style*="gap:40px"]{gap:16px!important}
+  div[style*="gap:32px"]{gap:12px!important}
+  /* Donut smaller */
+  svg[viewBox="0 0 700 400"],svg[viewBox="0 0 760 380"],svg[viewBox="0 0 300 130"]{max-width:100%}
+  /* Admin bar */
+  .admin-bar{padding:8px 14px!important;flex-wrap:wrap;font-size:11px!important}
+  /* Heat map overflow */
+  .heatmap-wrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch}
+}
 @media print{.admin-bar,.tab-btn,.btn,.edit-icon,.del-icon,.tab-nav,nav{display:none!important}header{padding:12px 24px!important;print-color-adjust:exact;-webkit-print-color-adjust:exact}.main-content{padding:8px!important;max-width:100%!important}.card{break-inside:avoid;page-break-inside:avoid;border:1px solid #ccc!important;box-shadow:none!important}body{background:#fff!important;font-size:11px!important}h2{font-size:16px!important}h3{font-size:13px!important}.overlay{display:none!important}}
 </style>
 </head>
@@ -47,6 +74,10 @@ input[type="checkbox"]:disabled{cursor:default;opacity:.6}
 <script>
 var e=React.createElement,useState=React.useState,useEffect=React.useEffect,useMemo=React.useMemo,useCallback=React.useCallback,useRef=React.useRef;
 var mono="'JetBrains Mono','Fira Code',monospace",MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// ── Mobile responsive helpers ──
+function useMobile(){var _w=useState(window.innerWidth<768);useEffect(function(){function h(){_w[1](window.innerWidth<768)}window.addEventListener("resize",h);return function(){window.removeEventListener("resize",h)}},[]);return _w[0]}
+function rg(cols,mob){return mob?"1fr":cols} // responsive grid columns
 var API_KEY="scci-onehub-api-url";
 var DEFAULT_API_URL="https://script.google.com/macros/s/AKfycbx8IOahDKlJgEwEVCbd5jsk1YF1M6OgGUVe6gPNidFQtI7ejaAxXEw_tSNuZkEHp1bHdA/exec";
 
@@ -146,7 +177,7 @@ function LoginModal(p){
 // ══════════════════════════════════════════
 function ProjectModal(p){
   var proj=p.project||{};
-  var _n=useState(proj.name||""),_c=useState(proj.client||""),_m=useState(proj.manager||""),_d=useState(proj.description||""),_sd=useState(proj.startDate||new Date().toISOString().slice(0,10)),_ed=useState(proj.endDate||"2026-12-31"),_pp=useState(String(proj.plannedPct||0)),_st=useState(proj.status||"Active"),_pri=useState(proj.priority||"Medium"),_tpl=useState(!proj.id),_saving=useState(false),_confirmDel=useState(false);
+  var mob=useMobile();var _n=useState(proj.name||""),_c=useState(proj.client||""),_m=useState(proj.manager||""),_d=useState(proj.description||""),_sd=useState(proj.startDate||new Date().toISOString().slice(0,10)),_ed=useState(proj.endDate||"2026-12-31"),_pp=useState(String(proj.plannedPct||0)),_st=useState(proj.status||"Active"),_pri=useState(proj.priority||"Medium"),_tpl=useState(!proj.id),_saving=useState(false),_confirmDel=useState(false);
   function save(){
     _saving[1](true);
     var data={name:_n[0],client:_c[0],manager:_m[0],description:_d[0],startDate:_sd[0],endDate:_ed[0],plannedPct:parseFloat(_pp[0])||0,status:_st[0],priority:_pri[0]};
@@ -162,7 +193,7 @@ function ProjectModal(p){
   function deleteProject(){_saving[1](true);apiPost("deleteProject",null,proj.id).then(function(r){if(r.ok){p.onSaved();p.onClose()}}).finally(function(){_saving[1](false)})}
   return e(Modal,{show:true,onClose:p.onClose},
     e("h3",{style:{fontSize:18,fontWeight:700,marginBottom:20}},proj.id?"\u270F\uFE0F Edit Project":"\u2795 New Project"),
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr auto auto",gap:12,marginBottom:12}},
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr auto auto",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"Project Name *"),e("input",{className:"input",value:_n[0],onChange:function(ev){_n[1](ev.target.value)}})),
       e("div",{style:{minWidth:140}},e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},e("option",{value:"Active"},"Active"),e("option",{value:"Not Yet Started"},"Not Yet Started"),e("option",{value:"On-Hold"},"On-Hold"),e("option",{value:"Completed"},"Completed"),e("option",{value:"Archived"},"Archived"),e("option",{value:"Cancel"},"Cancel"))),
       e("div",{style:{minWidth:110}},e("label",{className:"label"},"Priority"),e("select",{className:"select",value:_pri[0],onChange:function(ev){_pri[1](ev.target.value)},style:{borderColor:_pri[0]==="Critical"?"#E35B2D":_pri[0]==="High"?"#E9A620":"#e2e8f0"}},e("option",{value:"Critical"},"Critical"),e("option",{value:"High"},"High"),e("option",{value:"Medium"},"Medium"),e("option",{value:"Low"},"Low")))
@@ -172,7 +203,7 @@ function ProjectModal(p){
       e("div",null,e("label",{className:"label"},"Manager"),e("input",{className:"input",value:_m[0],onChange:function(ev){_m[1](ev.target.value)}}))
     ),
     e("label",{className:"label"},"Description"),e("textarea",{className:"input",value:_d[0],onChange:function(ev){_d[1](ev.target.value)},rows:2,style:{marginBottom:12,resize:"vertical"}}),
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}},
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:12,marginBottom:16}},
       e("div",null,e("label",{className:"label"},"Start Date"),e("input",{type:"date",className:"input",value:_sd[0],onChange:function(ev){_sd[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"End Date"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Planned %"),e("input",{type:"number",className:"input",value:_pp[0],onChange:function(ev){_pp[1](ev.target.value)}}))
@@ -201,7 +232,7 @@ function ProjectModal(p){
 // ══════════════════════════════════════════
 function ProjectList(p){
   var projects=p.projects,admin=p.admin,loading=p.loading;
-  var _showAdd=useState(false);
+  var _showAdd=useState(false);var mob=useMobile();
   if(loading)return e(Spinner);
 
   // ── Aggregate metrics ──
@@ -246,10 +277,10 @@ function ProjectList(p){
   return e("div",{style:{animation:"fadeIn .35s ease"}},
 
     // ═══ 1. WELCOME BANNER ═══
-    e("div",{style:{background:"linear-gradient(135deg,#1B2A4A 0%,#2471A3 60%,#17B8A6 100%)",borderRadius:14,padding:"24px 28px",marginBottom:16,color:"#fff",position:"relative",overflow:"hidden"}},
+    e("div",{style:{background:"linear-gradient(135deg,#1B2A4A 0%,#2471A3 60%,#17B8A6 100%)",borderRadius:mob?10:14,padding:mob?"16px 16px":"24px 28px",marginBottom:16,color:"#fff",position:"relative",overflow:"hidden"}},
       e("div",{style:{position:"absolute",top:-30,right:-30,width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,.05)"}}),
       e("div",{style:{position:"relative",zIndex:1}},
-        e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}},
+        e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:mob?"flex-start":"flex-start",flexDirection:mob?"column":"row",gap:mob?10:0,marginBottom:16}},
           e("div",null,e("h2",{style:{fontSize:22,fontWeight:700,marginBottom:4}},greet+"! \uD83D\uDC4B"),e("p",{style:{fontSize:12,opacity:.65}},"Project Management Office \u2014 "+projects.length+" project"+(projects.length!==1?"s":""))),
           admin&&e("button",{className:"btn",style:{background:"rgba(255,255,255,.18)",color:"#fff",fontSize:12},onClick:function(){_showAdd[1](true)}},"\u2795 New Project")),
         e("div",{style:{display:"flex",gap:32,flexWrap:"wrap"}},
@@ -257,17 +288,17 @@ function ProjectList(p){
           ].map(function(s,i){return e("div",{key:i},e("div",{style:{fontSize:26,fontWeight:800,fontFamily:mono}},s.v),e("div",{style:{fontSize:8,letterSpacing:1,opacity:.45,fontWeight:600}},s.l))})))),
 
     // ═══ 2. PROJECT PROGRESS OVERVIEW (Donut per project + traffic lights) ═══
-    nonArch.length>0&&e("div",{className:"card",style:{padding:"20px 24px",marginBottom:16}},
+    nonArch.length>0&&e("div",{className:"card",style:{padding:mob?"12px":"20px 24px",marginBottom:16,overflow:"hidden"}},
       e("div",{style:{fontSize:13,fontWeight:700,marginBottom:16}},"Project Progress Overview"),
       e("div",{style:{overflowX:"auto"}},
         e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
           e("thead",null,e("tr",{style:{borderBottom:"2px solid #e2e8f0"}},
-            ["Project","Progress","Plan","Actual","Variance","Milestones","Status"].map(function(h){return e("th",{key:h,style:{textAlign:"left",padding:"8px 10px",fontWeight:700,color:"#64748b",fontSize:10,textTransform:"uppercase",letterSpacing:.5}},h)}))),
+            ["Project","Progress","Plan","Actual","Variance","Milestones","Risk","Budget","Resources","Status"].map(function(h){return e("th",{key:h,style:{textAlign:"left",padding:"8px 10px",fontWeight:700,color:"#64748b",fontSize:10,textTransform:"uppercase",letterSpacing:.5}},h)}))),
           e("tbody",null,nonArch.map(function(pr){
             var pp2=Number(pr.plannedPct)||0,ap2=Number(pr.actualPct)||0,v2=Math.round((ap2-pp2)*10)/10;
             var ragC=v2>=0?"#10b981":v2>=-10?"#E9A620":"#E35B2D";
-            // Traffic light
             var light=v2>=0?"green":v2>=-10?"amber":"red";
+            var bu=Number(pr.budgetUtil)||0;
             return e("tr",{key:pr.id,style:{borderBottom:"1px solid #f1f5f9",cursor:"pointer"},onClick:function(){p.onSelect(pr.id)},
               onMouseEnter:function(ev){ev.currentTarget.style.background="#f8fafc"},onMouseLeave:function(ev){ev.currentTarget.style.background="transparent"}},
               e("td",{style:{padding:"10px"}},e("div",{style:{fontWeight:600,fontSize:13}},pr.name),e("div",{style:{fontSize:10,color:"#94a3b8"}},pr.manager||"")),
@@ -276,7 +307,22 @@ function ProjectList(p){
               e("td",{style:{padding:"10px",fontFamily:mono,fontWeight:600,color:ragC,fontSize:13}},ap2+"%"),
               e("td",{style:{padding:"10px"}},e("span",{style:{fontFamily:mono,fontWeight:700,fontSize:11,padding:"3px 8px",borderRadius:4,background:v2>=0?"#d1fae5":v2>=-10?"#FDF2D0":"#FDEAE4",color:ragC}},(v2>=0?"+":"")+v2+"%")),
               e("td",{style:{padding:"10px",fontFamily:mono,fontSize:11}},(pr.completedTasks||0)+"/"+(pr.totalTasks||0)),
-              // Traffic light indicator
+              // Risk column
+              e("td",{style:{padding:"10px"}},pr.riskTotal>0?e("div",{style:{display:"flex",gap:3}},
+                pr.riskHigh>0&&e("span",{style:{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:"#FDEAE4",color:"#E35B2D"}},pr.riskHigh+"H"),
+                pr.riskMed>0&&e("span",{style:{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:"#FDF2D0",color:"#E9A620"}},pr.riskMed+"M"),
+                pr.riskLow>0&&e("span",{style:{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:"#d1fae5",color:"#17B8A6"}},pr.riskLow+"L")
+              ):e("span",{style:{color:"#cbd5e1",fontSize:10}},"\u2014")),
+              // Budget column with tooltip showing plan, realized, remaining
+              e("td",{style:{padding:"10px"}},pr.budgetPlan>0?e("div",{title:"Plan: IDR "+Number(pr.budgetPlan).toLocaleString("id-ID")+"\nRealized: IDR "+Number(pr.budgetReal).toLocaleString("id-ID")+"\nRemaining: IDR "+Number(pr.budgetPlan-pr.budgetReal).toLocaleString("id-ID"),style:{cursor:"help",minWidth:80}},
+                e("div",{style:{fontSize:9,color:"#94a3b8"}},"Plan: ",e("span",{style:{fontFamily:mono,color:"#2471A3",fontWeight:600}},Number(pr.budgetPlan)>=1e6?(Number(pr.budgetPlan)/1e6).toFixed(0)+"M":Number(pr.budgetPlan).toLocaleString("id-ID"))),
+                e("div",{style:{fontSize:9,color:"#94a3b8"}},"Real: ",e("span",{style:{fontFamily:mono,color:"#10b981",fontWeight:600}},Number(pr.budgetReal)>=1e6?(Number(pr.budgetReal)/1e6).toFixed(0)+"M":Number(pr.budgetReal).toLocaleString("id-ID"))),
+                e(ProgressBar,{value:bu,h:3,color:bu>90?"#E35B2D":"#17B8A6"}),
+                e("div",{style:{fontSize:8,color:bu>90?"#E35B2D":"#94a3b8",textAlign:"right",fontFamily:mono}},bu+"%")
+              ):e("span",{style:{color:"#cbd5e1",fontSize:10}},"\u2014")),
+              // Resources column
+              e("td",{style:{padding:"10px",fontFamily:mono,fontSize:11,color:"#64748b"}},pr.resourceCount||0),
+              // Traffic light
               e("td",{style:{padding:"10px"}},e("div",{style:{display:"flex",gap:3}},
                 e("div",{style:{width:14,height:14,borderRadius:"50%",background:light==="red"?"#E35B2D":"#e2e8f0",border:"2px solid "+(light==="red"?"#C9421A":"#d1d5db")}}),
                 e("div",{style:{width:14,height:14,borderRadius:"50%",background:light==="amber"?"#E9A620":"#e2e8f0",border:"2px solid "+(light==="amber"?"#CC8E10":"#d1d5db")}}),
@@ -287,7 +333,7 @@ function ProjectList(p){
     ),
 
     // ═══ 3. BUDGET + RISK + ISSUES ROW ═══
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:16}},
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:mob?10:14,marginBottom:16}},
 
       // Budget Analysis
       e("div",{className:"card",style:{padding:"18px 20px"}},
@@ -300,7 +346,7 @@ function ProjectList(p){
         // Per-project bars
         e("div",{style:{marginTop:12,borderTop:"1px solid #f1f5f9",paddingTop:8}},
           nonArch.filter(function(pr){return pr.budgetPlan>0}).slice(0,5).map(function(pr){
-            return e("div",{key:pr.id,style:{marginBottom:6}},
+            return e("div",{key:pr.id,style:{marginBottom:6,cursor:"pointer"},onClick:function(){p.onSelect(pr.id)}},
               e("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:2}},
                 e("span",{style:{color:"#475569",fontWeight:500}},pr.name.length>18?pr.name.substring(0,18)+"..":pr.name),
                 e("span",{style:{fontFamily:mono,fontWeight:600,color:pr.budgetUtil>90?"#E35B2D":"#64748b"}},fmtIDR(pr.budgetReal))),
@@ -320,7 +366,7 @@ function ProjectList(p){
         // Per-project risk breakdown
         e("div",{style:{borderTop:"1px solid #f1f5f9",paddingTop:8}},
           nonArch.filter(function(pr){return pr.riskTotal>0}).slice(0,5).map(function(pr){
-            return e("div",{key:pr.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f8fafc"}},
+            return e("div",{key:pr.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f8fafc",cursor:"pointer"},onClick:function(){p.onSelect(pr.id)}},
               e("span",{style:{fontSize:11,color:"#475569",fontWeight:500}},pr.name.length>16?pr.name.substring(0,16)+"..":pr.name),
               e("div",{style:{display:"flex",gap:3}},
                 pr.riskHigh>0&&e("span",{style:{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:"#FDEAE4",color:"#E35B2D"}},pr.riskHigh+"H"),
@@ -344,7 +390,7 @@ function ProjectList(p){
         // Per-project issues
         e("div",{style:{borderTop:"1px solid #f1f5f9",paddingTop:8,marginTop:10}},
           nonArch.filter(function(pr){return pr.issuesTotal>0}).slice(0,5).map(function(pr){
-            return e("div",{key:pr.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f8fafc"}},
+            return e("div",{key:pr.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f8fafc",cursor:"pointer"},onClick:function(){p.onSelect(pr.id)}},
               e("span",{style:{fontSize:11,color:"#475569",fontWeight:500}},pr.name.length>16?pr.name.substring(0,16)+"..":pr.name),
               e("div",{style:{display:"flex",gap:4}},
                 pr.issuesOpen>0&&e("span",{style:{fontSize:9,fontWeight:600,color:"#E9A620"}},pr.issuesOpen+" open"),
@@ -354,14 +400,14 @@ function ProjectList(p){
     ),
 
     // ═══ 4. MILESTONES ROW ═══
-    (overdue.length>0||upcoming.length>0)&&e("div",{style:{display:"grid",gridTemplateColumns:overdue.length>0&&upcoming.length>0?"1fr 1fr":"1fr",gap:14,marginBottom:16}},
+    (overdue.length>0||upcoming.length>0)&&e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":(overdue.length>0&&upcoming.length>0?"1fr 1fr":"1fr"),gap:14,marginBottom:16}},
       overdue.length>0&&e("div",{className:"card",style:{padding:"16px 20px",borderLeft:"4px solid #E35B2D"}},
         e("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:10}},
           e("span",{style:{fontSize:13,fontWeight:700,color:"#E35B2D"}},"\uD83D\uDEA8 Overdue Milestones"),
           e("span",{style:{fontSize:10,fontWeight:700,background:"#FDEAE4",color:"#E35B2D",padding:"1px 6px",borderRadius:8}},overdue.length)),
         overdue.slice(0,4).map(function(m,i){
           var dl=Math.ceil((today-new Date(m.date+"T00:00:00"))/(864e5));
-          return e("div",{key:i,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<Math.min(overdue.length,4)-1?"1px solid #f1f5f9":""}},
+          return e("div",{key:i,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<Math.min(overdue.length,4)-1?"1px solid #f1f5f9":"",cursor:"pointer"},onClick:function(){p.onSelect(m.projectId)}},
             e("div",null,e("div",{style:{fontSize:12,fontWeight:600}},m.name),e("div",{style:{fontSize:10,color:"#94a3b8"}},m.projectName)),
             e("div",{style:{textAlign:"right"}},e("div",{style:{fontSize:10,fontFamily:mono,color:"#E35B2D",fontWeight:700}},dl+"d late"),e("div",{style:{fontSize:9,color:"#94a3b8"}},fmtF(m.date))))})),
       upcoming.length>0&&e("div",{className:"card",style:{padding:"16px 20px",borderLeft:"4px solid #2471A3"}},
@@ -370,15 +416,15 @@ function ProjectList(p){
           e("span",{style:{fontSize:10,fontWeight:700,background:"#E8F1F8",color:"#2471A3",padding:"1px 6px",borderRadius:8}},upcoming.length)),
         upcoming.slice(0,4).map(function(m,i){
           var du=Math.ceil((new Date(m.date+"T00:00:00")-today)/(864e5));
-          return e("div",{key:i,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<upcoming.length-1?"1px solid #f1f5f9":""}},
+          return e("div",{key:i,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<upcoming.length-1?"1px solid #f1f5f9":"",cursor:"pointer"},onClick:function(){p.onSelect(m.projectId)}},
             e("div",null,e("div",{style:{fontSize:12,fontWeight:600}},m.name),e("div",{style:{fontSize:10,color:"#94a3b8"}},m.projectName)),
             e("div",{style:{textAlign:"right"}},e("div",{style:{fontSize:10,fontFamily:mono,color:du<=7?"#E9A620":"#2471A3",fontWeight:700}},du<=0?"Today":du+"d"),e("div",{style:{fontSize:9,color:"#94a3b8"}},fmtF(m.date))))}))
     ),
 
     // ═══ 4b. BUDGET TREND LINE CHART ═══
-    totBudget>0&&e("div",{className:"card",style:{padding:"20px 24px",marginBottom:16}},
+    totBudget>0&&e("div",{className:"card",style:{padding:mob?"12px":"20px 24px",marginBottom:16,overflow:"hidden"}},
       e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}},
-        e("span",{style:{fontSize:13,fontWeight:700}},"Budget Plan vs Realization Trend"),
+        e("span",{style:{fontSize:13,fontWeight:700},title:"Total Budget Plan: IDR "+Number(Math.round(totBudget)).toLocaleString("id-ID")+"\nTotal Realized: IDR "+Number(Math.round(totReal)).toLocaleString("id-ID")+"\nRemaining: IDR "+Number(Math.round(totBudget-totReal)).toLocaleString("id-ID")},"Budget Plan vs Realization Trend"),
         e("div",{style:{display:"flex",gap:12}},
           e("div",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:12,height:3,background:"#2471A3",borderRadius:2}}),e("span",{style:{fontSize:10,color:"#94a3b8"}},"Plan")),
           e("div",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:12,height:3,background:"#10b981",borderRadius:2}}),e("span",{style:{fontSize:10,color:"#94a3b8"}},"Realization")))),
@@ -419,14 +465,18 @@ function ProjectList(p){
             e("text",{x:pL-6,y:yc(v)+3,textAnchor:"end",fill:"#cbd5e1",fontSize:9,fontFamily:mono},fmtK(v)))}),
           // X labels
           MO2.map(function(m,i){return e("text",{key:i,x:xc(i),y:H-6,textAnchor:"middle",fill:i<=cm3?"#475569":"#cbd5e1",fontSize:9,fontWeight:i===cm3?700:400},m)}),
+          // Quarter separators & labels
+          [0,3,6,9].map(function(qi,qx){return e("g",{key:"q"+qx},
+            qi>0&&e("line",{x1:xc(qi),y1:pT,x2:xc(qi),y2:pT+cH,stroke:"#e2e8f0",strokeWidth:1,strokeDasharray:"3,3"}),
+            e("text",{x:xc(qi)+((xc(qi+2)-xc(qi))/2),y:pT-4,textAnchor:"middle",fill:"#cbd5e1",fontSize:8,fontWeight:600},"Q"+(qx+1)))}),
           // Plan line + area
           e("path",{d:ppLine+" L"+xc(11)+","+yc(0)+" L"+xc(0)+","+yc(0)+" Z",fill:"#2471A3",opacity:.06}),
           e("path",{d:ppLine,fill:"none",stroke:"#2471A3",strokeWidth:2,strokeLinecap:"round"}),
-          cumP.map(function(v,i){return e("circle",{key:"p"+i,cx:xc(i),cy:yc(v),r:2.5,fill:"#fff",stroke:"#2471A3",strokeWidth:1.5})}),
+          cumP.map(function(v,i){return e("circle",{key:"p"+i,cx:xc(i),cy:yc(v),r:3,fill:"#fff",stroke:"#2471A3",strokeWidth:1.5,style:{cursor:"pointer"}},e("title",null,MO2[i]+" Plan: IDR "+Number(Math.round(v)).toLocaleString("id-ID")))}),
           // Realization line + area (up to current month)
           e("path",{d:cumR.slice(0,cm3+1).map(function(v,i){return(i?"L":"M")+xc(i).toFixed(1)+","+yc(v).toFixed(1)}).join(" ")+" L"+xc(cm3)+","+yc(0)+" L"+xc(0)+","+yc(0)+" Z",fill:"#10b981",opacity:.06}),
           e("path",{d:cumR.slice(0,cm3+1).map(function(v,i){return(i?"L":"M")+xc(i).toFixed(1)+","+yc(v).toFixed(1)}).join(" "),fill:"none",stroke:"#10b981",strokeWidth:2,strokeLinecap:"round"}),
-          cumR.slice(0,cm3+1).map(function(v,i){return e("circle",{key:"r"+i,cx:xc(i),cy:yc(v),r:2.5,fill:"#fff",stroke:"#10b981",strokeWidth:1.5})}),
+          cumR.slice(0,cm3+1).map(function(v,i){return e("circle",{key:"r"+i,cx:xc(i),cy:yc(v),r:3,fill:"#fff",stroke:"#10b981",strokeWidth:1.5,style:{cursor:"pointer"}},e("title",null,MO2[i]+" Realized: IDR "+Number(Math.round(v)).toLocaleString("id-ID")))}),
           // Today marker
           e("line",{x1:xc(cm3),y1:pT,x2:xc(cm3),y2:pT+cH,stroke:"#94a3b8",strokeWidth:1,strokeDasharray:"4,3"}),
           e("text",{x:xc(cm3),y:pT-4,textAnchor:"middle",fill:"#94a3b8",fontSize:8},"Today")
@@ -443,7 +493,7 @@ function ProjectList(p){
       if(!hasPri)return null;
       return e("div",{className:"card",style:{padding:"18px 24px",marginBottom:16}},
         e("div",{style:{fontSize:13,fontWeight:700,marginBottom:12}},"Projects by Priority"),
-        e("div",{style:{display:"flex",gap:10,marginBottom:12}},
+        e("div",{style:{display:"flex",gap:mob?6:10,marginBottom:12,flexWrap:mob?"wrap":"nowrap"}},
           priCounts.map(function(pc){var cl=priCol[pc.pri]||priCol.Medium;
             return e("div",{key:pc.pri,style:{flex:1,textAlign:"center",background:cl.bg,borderRadius:8,padding:"12px 4px"}},
               e("div",{style:{fontSize:22,fontWeight:800,fontFamily:mono,color:cl.c}},pc.count),
@@ -490,7 +540,7 @@ function ProjectList(p){
               e("span",{style:{fontSize:14}},stIco[st]),e("h4",{style:{fontSize:13,fontWeight:700}},stLbl[st]),
               e("span",{style:{fontSize:10,fontWeight:600,background:sc2.bg,color:sc2.c,padding:"1px 8px",borderRadius:10}},grp.length),
               e("div",{style:{flex:1,height:1,background:"#e2e8f0",marginLeft:6}})),
-            e("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}},
+            e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(auto-fill,minmax(300px,1fr))",gap:12}},
               grp.map(function(proj,i){
                 var v3=Math.round(((proj.actualPct||0)-(proj.plannedPct||0))*10)/10;
                 return e("div",{key:proj.id,className:"project-card",onClick:function(){p.onSelect(proj.id)},style:{animation:"fadeIn .2s ease "+(i*.04)+"s both",padding:"18px 20px"}},
@@ -541,7 +591,7 @@ function ProjectList(p){
 
 function ProjectDetail(p){
   var admin=p.admin,projectId=p.projectId,onBack=p.onBack,userRole=p.userRole||"viewer",userName=p.userName||"";
-  var canEditBudget=admin&&userRole==="admin"; // only admin can edit budget, not project_owner
+  var canEditBudget=admin&&userRole==="admin";var mob=useMobile();
   var _data=useState(null),data=_data[0],setData=_data[1];
   var _loading=useState(true),_tab=useState("Overview"),tab=_tab[0];
   var _exp=useState(null),_newSub=useState({});
@@ -553,7 +603,7 @@ function ProjectDetail(p){
 
   if(_loading[0]||!data||!data.project)return e(Spinner);
 
-  var proj=data.project,tasks=data.tasks||[],risks=data.risks||[],riskHist=data.riskHistory||[],budgetItems=data.budgetItems||[],budgetReals=data.budgetRealizations||[],regItems=data.registerItems||[],weeklyReps=data.weeklyReports||[];
+  var proj=data.project,tasks=data.tasks||[],risks=data.risks||[],riskHist=data.riskHistory||[],budgetItems=data.budgetItems||[],budgetReals=data.budgetRealizations||[],regItems=data.registerItems||[],weeklyReps=data.weeklyReports||[],resources=data.resources||[];
   var totalSubs=tasks.reduce(function(a,t){return a+(t.subtasks?t.subtasks.length:0)},0);
   var doneSubs=tasks.reduce(function(a,t){return a+(t.subtasks?t.subtasks.filter(function(s){return s.done}).length:0)},0);
   var overall=totalSubs>0?doneSubs/totalSubs*100:0;
@@ -576,35 +626,36 @@ function ProjectDetail(p){
   function delRisk(rid){if(confirm("Delete?"))apiPost("deleteRisk",null,rid).then(load)}
   function snapshot(){var s=compRS(risks);apiPost("addRiskSnapshot",{projectId:projectId,pct:s.pct,score:s.score,max:s.max,label:new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}).then(load)}
 
-  var TABS=["Overview","Timeline","S-Curve","Tasks","Milestones","Risk Monitor","Budget","Issue Logs","Reports"];
+  var TABS=["Overview","Timeline","S-Curve","Tasks","Milestones","Risk Monitor","Budget","Issue Logs","Resources","Reports"];
   if(admin)TABS.push("Log");
 
   return e("div",{style:{animation:"fadeIn .3s ease"}},
     // Back + project header
-    e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:20}},
-      e("button",{className:"btn btn-ghost",onClick:onBack},"\u2190 All Projects"),
-      e("div",{style:{flex:1}},
-        e("h2",{style:{fontSize:22,fontWeight:700}},proj.name),
-        e("p",{style:{fontSize:13,color:"#64748b"}},(proj.client?proj.client+" \u00B7 ":"")+(proj.manager||""))
+    e("div",{style:{display:"flex",alignItems:"center",gap:mob?8:12,marginBottom:mob?12:20,flexWrap:mob?"wrap":"nowrap"}},
+      e("button",{className:"btn btn-ghost",onClick:onBack,style:{fontSize:mob?11:12}},"\u2190"+(mob?"":" All Projects")),
+      e("div",{style:{flex:1,minWidth:0}},
+        e("h2",{style:{fontSize:mob?16:22,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},proj.name),
+        e("p",{style:{fontSize:mob?11:13,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},(proj.client?proj.client+" \u00B7 ":"")+(proj.manager||""))
       ),
-      admin&&e("button",{className:"btn btn-ghost",onClick:function(){_editProj[1](true)}},"\u270F Edit"),
-      e("button",{className:"btn btn-primary",onClick:function(){_tab[1]("_print");setTimeout(function(){window.print();setTimeout(function(){_tab[1]("Overview")},200)},300)}},"\uD83D\uDCC4 Export PDF")
+      admin&&e("button",{className:"btn btn-ghost",onClick:function(){_editProj[1](true)},style:{fontSize:mob?10:12,padding:mob?"5px 8px":"8px 16px"}},"\u270F"+(mob?"":" Edit")),
+      e("button",{className:"btn btn-primary",onClick:function(){_tab[1]("_print");setTimeout(function(){window.print();setTimeout(function(){_tab[1]("Overview")},200)},300)},style:{fontSize:mob?10:12,padding:mob?"5px 8px":"8px 16px"}},"\uD83D\uDCC4"+(mob?"":" Export PDF"))
     ),
 
-    // Tabs
-    e("div",{style:{display:"flex",gap:4,borderBottom:"2px solid #e2e8f0",marginBottom:24,overflowX:"auto"}},
-      TABS.map(function(t){return e("button",{key:t,className:"tab-btn "+(tab===t?"tab-active":"tab-inactive"),onClick:function(){_tab[1](t)}},t)})),
+    // Tabs — horizontally scrollable on mobile
+    e("div",{style:{display:"flex",gap:mob?0:4,borderBottom:"2px solid #e2e8f0",marginBottom:mob?16:24,overflowX:"auto",WebkitOverflowScrolling:"touch",msOverflowStyle:"none",scrollbarWidth:"none"}},
+      TABS.map(function(t){return e("button",{key:t,className:"tab-btn "+(tab===t?"tab-active":"tab-inactive"),style:mob?{padding:"10px 10px",fontSize:11,whiteSpace:"nowrap"}:undefined,onClick:function(){_tab[1](t)}},t)})),
 
     // Tab content
     tab==="_print"&&e(PrintAllView,{proj:proj,tasks:tasks,risks:risks,metrics:metrics,rl:rl,rs:rs,budgetItems:budgetItems,budgetReals:budgetReals,regItems:regItems,weeklyReps:weeklyReps}),
-    tab==="Overview"&&e(ProjOverview,{proj:proj,tasks:tasks,risks:risks,metrics:metrics,rl:rl,rs:rs,setTab:_tab[1],budgetItems:budgetItems,budgetReals:budgetReals,regItems:regItems}),
+    tab==="Overview"&&e(ProjOverview,{proj:proj,tasks:tasks,risks:risks,metrics:metrics,rl:rl,rs:rs,setTab:_tab[1],budgetItems:budgetItems,budgetReals:budgetReals,regItems:regItems,resources:resources}),
     tab==="Timeline"&&e(ProjGantt,{tasks:tasks}),
     tab==="S-Curve"&&e(ProjSCurve,{tasks:tasks,metrics:metrics}),
     tab==="Tasks"&&e(ProjTasks,{tasks:tasks,admin:admin,exp:_exp,newSub:_newSub,toggleSub:toggleSub,delSub:delSub,addSub:addSub,editSubName:editSubName,delTask:delTask,reorderTasks:reorderTasks,setEditTask:_editTask[1],setShowAddTask:_showAddTask[1]}),
     tab==="Milestones"&&e(ProjMilestones,{tasks:tasks}),
-    tab==="Risk Monitor"&&e(ProjRisks,{risks:risks,tasks:tasks,riskHist:riskHist,admin:admin,rs:rs,rl:rl,updateRS:updateRS,delRisk:delRisk,snapshot:snapshot,setEditRisk:_editRisk[1],setShowAddRisk:_showAddRisk[1]}),
+    tab==="Risk Monitor"&&e(ProjRisks,{risks:risks,tasks:tasks,riskHist:riskHist,admin:admin,rs:rs,rl:rl,updateRS:updateRS,delRisk:delRisk,snapshot:snapshot,setEditRisk:_editRisk[1],setShowAddRisk:_showAddRisk[1],projectId:projectId,reload:load}),
     tab==="Budget"&&e(ProjBudget,{budgetItems:budgetItems,budgetReals:budgetReals,projectId:projectId,admin:canEditBudget,reload:load}),
     tab==="Issue Logs"&&e(ProjRegister,{items:regItems,tasks:tasks,projectId:projectId,admin:admin,reload:load}),
+    tab==="Resources"&&e(ProjResources,{resources:resources,projectId:projectId,admin:admin,reload:load}),
     tab==="Reports"&&e(ProjReports,{reports:weeklyReps,projectId:projectId,admin:admin,reload:load}),
     tab==="Log"&&admin&&e(ProjLog,{projectId:projectId}),
 
@@ -713,7 +764,7 @@ function HeatMap5x5(p){
     )
   );
 }
-function ProjOverview(p){var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics,rl=p.rl,rs=p.rs,bi=p.budgetItems||[],br=p.budgetReals||[],reg=p.regItems||[];
+function ProjOverview(p){var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics,rl=p.rl,rs=p.rs,bi=p.budgetItems||[],br=p.budgetReals||[],reg=p.regItems||[];var mob=useMobile();
   var plannedPct=Number(proj.plannedPct)||0,actualPct=pct(m.overall/100),variance=actualPct-plannedPct;
   var totalBudget=bi.reduce(function(a,b){return a+Number(b.amount)},0),totalReal=br.reduce(function(a,b){return a+Number(b.amount)},0);
   var budgetUtil=totalBudget>0?Math.round(totalReal/totalBudget*100):0;
@@ -729,7 +780,7 @@ function ProjOverview(p){var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics
 
   return e("div",{style:{animation:"fadeIn .3s"}},
     // ── Row: Overall Completion + Mini Timeline ──
-    e("div",{className:"grid-2",style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}},
+    e("div",{className:"grid-2",style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:mob?10:16,marginBottom:mob?14:20}},
 
       // Overall Completion card
       e("div",{className:"card",style:{padding:"24px"}},
@@ -782,18 +833,19 @@ function ProjOverview(p){var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics
     ),
 
     // ── KPI Cards Row (clickable) ──
-    e("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:12,marginBottom:24}},
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(3,1fr)":"repeat(auto-fill,minmax(150px,1fr))",gap:12,marginBottom:24}},
       [{l:"Progress",v:actualPct+"% / 100%",i:"\uD83D\uDCCA",c:"#2471A3",t:"Tasks"},
        {l:"Milestones",v:m.ct+"/"+m.tt,i:"\uD83C\uDFC1",c:m.ct===m.tt?"#10b981":"#E9A620",t:"Milestones"},
        {l:"Subtasks",v:m.ds+"/"+m.ts,i:"\uD83D\uDCDD",c:"#2471A3",t:"Tasks"},
        {l:"Risk Level",v:rl.level,i:rl.emoji,c:rl.color,t:"Risk Monitor"},
        {l:"Open Issues",v:openIssues,i:"\u26A0\uFE0F",c:openIssues>0?"#E35B2D":"#10b981",t:"Issue Logs"},
-       {l:"Budget Util.",v:budgetUtil+"%",i:"\uD83D\uDCB0",c:budgetUtil>90?"#E35B2D":budgetUtil>70?"#E9A620":"#2471A3",t:"Budget"}
+       {l:"Budget Util.",v:budgetUtil+"%",i:"\uD83D\uDCB0",c:budgetUtil>90?"#E35B2D":budgetUtil>70?"#E9A620":"#2471A3",t:"Budget"},
+       {l:"Resources",v:(p.resources||[]).length,i:"\uD83D\uDC65",c:"#64748b",t:"Resources"}
       ].map(function(c,i){return e("div",{key:i,className:"card",onClick:function(){p.setTab(c.t)},style:{padding:"14px",animation:"fadeIn .3s ease "+(i*.05)+"s both",cursor:"pointer",transition:"all .2s"},onMouseEnter:function(ev){ev.currentTarget.style.borderColor="#2471A3";ev.currentTarget.style.transform="translateY(-2px)"},onMouseLeave:function(ev){ev.currentTarget.style.borderColor="#e2e8f0";ev.currentTarget.style.transform="none"}},e("div",{style:{fontSize:16,marginBottom:4}},c.i),e("div",{style:{fontSize:20,fontWeight:700,fontFamily:mono,color:c.c||"#1B2A4A"}},c.v),e("div",{style:{fontSize:10,color:"#64748b",marginTop:2,fontWeight:600}},c.l))})
     ),
 
     // ── Row: Budget Plan vs Realization + Issue Status ──
-    e("div",{className:"grid-2",style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}},
+    e("div",{className:"grid-2",style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:mob?10:16,marginBottom:mob?14:20}},
       // Budget card
       e("div",{className:"card",style:{padding:"20px 24px"}},
         e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
@@ -1009,15 +1061,25 @@ function ProjGantt(p){var tasks=p.tasks;var _hover=useState(null);var cm=getCM()
 }
 
 function ProjRisks(p){var risks=p.risks,tasks=p.tasks,riskHist=p.riskHist,admin=p.admin,rs=p.rs,rl=p.rl;
+  var _showSnaps=useState(false);var mob=useMobile();
+  function delSnap(h){if(!confirm("Delete this snapshot ("+h.pct+"%)? This cannot be undone."))return;
+    apiPost("deleteRiskSnapshot",{projectId:p.projectId,date:h.date}).then(function(){p.reload()})}
   // Format trend labels properly
   var trendLabels=riskHist.map(function(h,i){
     if(!h.label)return"#"+(i+1);
-    var d=h.label.match(/(\d{1,2})\s*(\w{3})/);
-    return d?d[1]+" "+d[2]:"#"+(i+1)});
+    var lb=String(h.label);
+    // Try "dd Mon" format first
+    var d=lb.match(/(\d{1,2})\s*([A-Za-z]{3})/);if(d)return d[1]+" "+d[2];
+    // Try ISO date "2026-03-18..."
+    var iso=lb.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(iso){var ms=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];return parseInt(iso[3])+" "+ms[parseInt(iso[2])-1]}
+    // Try just extracting any readable part
+    if(lb.length>8)return lb.substring(0,6);
+    return lb||"#"+(i+1)});
   return e("div",{style:{animation:"fadeIn .3s"}},
     e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:20}},e("h2",{style:{fontSize:20,fontWeight:700}},"Risk Monitor"),admin&&e("button",{className:"btn btn-primary",onClick:function(){p.setShowAddRisk(true)}},"\u2795 Add Risk")),
     // Row 1: Risk Level + Trend
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}},
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:mob?10:16,marginBottom:16}},
       e("div",{className:"card",style:{padding:20,textAlign:"center"}},e("h3",{style:{fontSize:13,fontWeight:700,marginBottom:14}},"Risk Level"),
         e("div",{style:{width:140,height:80,margin:"0 auto 10px"}},e("svg",{viewBox:"0 0 180 100",style:{width:"100%"}},e("path",{d:"M 10 90 A 80 80 0 0 1 170 90",fill:"none",stroke:"#e2e8f0",strokeWidth:14,strokeLinecap:"round"}),e("path",{d:"M 10 90 A 80 80 0 0 1 170 90",fill:"none",stroke:rl.color,strokeWidth:14,strokeLinecap:"round",strokeDasharray:Math.round(rs.pct/100*251)+",251",style:{transition:"all .8s"}}),e("text",{x:90,y:72,textAnchor:"middle",fontSize:26,fontWeight:700,fontFamily:mono,fill:rl.color},rs.pct+"%"),e("text",{x:90,y:92,textAnchor:"middle",fontSize:10,fontWeight:600,fill:rl.color},rl.level))),
         admin&&e("button",{className:"btn btn-primary",onClick:p.snapshot,style:{fontSize:11}},"\uD83D\uDCF8 Snapshot")),
@@ -1033,9 +1095,20 @@ function ProjRisks(p){var risks=p.risks,tasks=p.tasks,riskHist=p.riskHist,admin=
           riskHist.map(function(h,i){var xp=30+(riskHist.length===1?125:i/(riskHist.length-1)*250),yp=10+(100-Number(h.pct))/100*90,lv=getRL(Number(h.pct));
             return e("g",{key:i},e("circle",{cx:xp,cy:yp,r:3.5,fill:"#fff",stroke:lv.color,strokeWidth:2}),
               e("text",{x:xp,y:yp-8,textAnchor:"middle",fill:lv.color,fontSize:8,fontWeight:700},h.pct+"%"),
-              e("text",{x:xp,y:118,textAnchor:"middle",fill:"#94a3b8",fontSize:7,transform:"rotate(-30 "+xp+" 118)"},trendLabels[i]))})))),
+              e("text",{x:xp,y:118,textAnchor:"middle",fill:"#94a3b8",fontSize:7,transform:"rotate(-30 "+xp+" 118)"},trendLabels[i]))})),
+        // Snapshot management
+        admin&&riskHist.length>0&&e("div",{style:{marginTop:10,borderTop:"1px solid #f1f5f9",paddingTop:8}},
+          e("button",{style:{background:"none",border:"none",cursor:"pointer",fontSize:10,color:"#94a3b8",fontFamily:"inherit"},onClick:function(){_showSnaps[1](!_showSnaps[0])}},_showSnaps[0]?"\u25BC Hide Snapshots ("+riskHist.length+")":"\u25B6 Manage Snapshots ("+riskHist.length+")"),
+          _showSnaps[0]&&e("div",{style:{marginTop:6}},
+            riskHist.map(function(h,i){
+              return e("div",{key:i,style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",borderBottom:"1px solid #f8fafc",fontSize:11}},
+                e("span",{style:{fontWeight:600,color:getRL(Number(h.pct)).color,fontFamily:mono,width:36}},h.pct+"%"),
+                e("span",{style:{color:"#94a3b8",flex:1}},trendLabels[i]),
+                e("button",{className:"del-icon",style:{width:20,height:20,fontSize:9},onClick:function(){delSnap(h)}},"\u2715"))
+            })))
+      )),
     // Row 2: Heat Map (left) + All Risks (right)
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}},
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:mob?10:16,marginBottom:16}},
       // Heat Map
       e("div",{className:"card",style:{padding:"20px"}},
         e("h3",{style:{fontSize:13,fontWeight:700,marginBottom:14}},"Risk Heat Map"),
@@ -1384,6 +1457,82 @@ function ReportModal(p){
   );
 }
 
+// ══════════════════════════════════════════
+// RESOURCES MODULE
+// ══════════════════════════════════════════
+function ResourceModal(p){
+  var item=p.item||{};var isEdit=!!item.id;
+  var _name=useState(item.name||""),_type=useState(item.type||"People"),_qty=useState(String(item.qty||1)),_unit=useState(item.unit||"Headcount"),_desc=useState(item.description||""),_saving=useState(false);
+  function save(){
+    if(!_name[0].trim())return;
+    _saving[1](true);
+    var data={projectId:p.projectId,name:_name[0],type:_type[0],qty:Number(_qty[0])||1,unit:_unit[0],description:_desc[0]};
+    (isEdit?apiPost("updateResource",data,item.id):apiPost("addResource",data)).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})
+  }
+  var unitOpts={People:["Headcount","FTE","Man-days"],Tools:["Item","License","Set"],Others:["Lot","Unit","Item"]};
+  return e(Modal,{show:true,onClose:p.onClose},
+    e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},isEdit?"\u270F\uFE0F Edit Resource":"\u2795 Add Resource"),
+    e("label",{className:"label"},"Resource Name *"),
+    e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value)},placeholder:"e.g. Project Manager, Laptop, Cloud Server",style:{marginBottom:12}}),
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Type"),e("select",{className:"select",value:_type[0],onChange:function(ev){_type[1](ev.target.value);_unit[1](unitOpts[ev.target.value]?unitOpts[ev.target.value][0]:"Item")}},e("option",{value:"People"},"People"),e("option",{value:"Tools"},"Tools"),e("option",{value:"Others"},"Others"))),
+      e("div",null,e("label",{className:"label"},"Quantity"),e("input",{type:"number",className:"input",value:_qty[0],onChange:function(ev){_qty[1](ev.target.value)},min:1})),
+      e("div",null,e("label",{className:"label"},"Unit"),e("select",{className:"select",value:_unit[0],onChange:function(ev){_unit[1](ev.target.value)}},(unitOpts[_type[0]]||["Item"]).map(function(u){return e("option",{key:u,value:u},u)})))),
+    e("label",{className:"label"},"Description"),
+    e("textarea",{className:"input",value:_desc[0],onChange:function(ev){_desc[1](ev.target.value)},rows:2,style:{marginBottom:16,resize:"vertical"},placeholder:"Role, specifications, notes..."}),
+    e("div",{style:{display:"flex",gap:10}},
+      e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
+      e("button",{className:"btn btn-primary",onClick:save,disabled:_saving[0]||!_name[0].trim(),style:{flex:1}},_saving[0]?"Saving...":isEdit?"Save Changes":"Add Resource"))
+  );
+}
+
+function ProjResources(p){
+  var resources=p.resources||[],admin=p.admin,projectId=p.projectId,reload=p.reload;
+  var _showAdd=useState(false),_edit=useState(null);
+  var typeIcons={People:"\uD83D\uDC64",Tools:"\uD83D\uDD27",Others:"\uD83D\uDCE6"};
+  var typeColors={People:{bg:"#E8F1F8",c:"#2471A3"},Tools:{bg:"#FDF2D0",c:"#E9A620"},Others:{bg:"#f1f5f9",c:"#64748b"}};
+  // Group by type
+  var grouped={People:[],Tools:[],Others:[]};
+  resources.forEach(function(r){var t=r.type||"Others";if(!grouped[t])grouped[t]=[];grouped[t].push(r)});
+
+  function delRes(id){if(confirm("Delete this resource?"))apiPost("deleteResource",null,id).then(function(){reload()})}
+
+  return e("div",{style:{animation:"fadeIn .3s"}},
+    e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:20}},
+      e("h2",{style:{fontSize:20,fontWeight:700}},"Project Resources"),
+      admin&&e("button",{className:"btn btn-primary",onClick:function(){_showAdd[1](true)}},"\u2795 Add Resource")),
+    // Summary cards
+    e("div",{style:{display:"flex",gap:12,marginBottom:20}},
+      ["People","Tools","Others"].map(function(t){var tc=typeColors[t];
+        return e("div",{key:t,className:"card",style:{flex:1,padding:"16px",textAlign:"center"}},
+          e("div",{style:{fontSize:20,marginBottom:4}},typeIcons[t]),
+          e("div",{style:{fontSize:24,fontWeight:800,fontFamily:mono,color:tc.c}},grouped[t].length),
+          e("div",{style:{fontSize:10,color:"#64748b",fontWeight:600}},t),
+          e("div",{style:{fontSize:10,color:"#94a3b8",marginTop:2}},grouped[t].reduce(function(a,r){return a+(Number(r.qty)||0)},0)+" total qty"))})),
+    // Resources list
+    resources.length===0?e("div",{className:"card",style:{padding:"40px",textAlign:"center"}},
+      e("div",{style:{fontSize:32,marginBottom:8}},"\uD83D\uDC65"),
+      e("div",{style:{fontSize:14,color:"#94a3b8"}},"No resources allocated yet")):
+    e("div",{className:"card",style:{overflow:"hidden"}},
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
+        e("thead",null,e("tr",{style:{borderBottom:"2px solid #e2e8f0",background:"#f8fafc"}},
+          ["Type","Name","Qty","Unit","Description",""].map(function(h){return e("th",{key:h,style:{textAlign:"left",padding:"10px 12px",fontWeight:700,color:"#64748b",fontSize:10,textTransform:"uppercase"}},h)}))),
+        e("tbody",null,resources.map(function(r){var tc2=typeColors[r.type||"Others"];
+          return e("tr",{key:r.id,style:{borderBottom:"1px solid #f1f5f9"}},
+            e("td",{style:{padding:"10px 12px"}},e(Badge,{bg:tc2.bg,color:tc2.c},(typeIcons[r.type]||"")+r.type)),
+            e("td",{style:{padding:"10px 12px",fontWeight:600}},r.name),
+            e("td",{style:{padding:"10px 12px",fontFamily:mono,fontWeight:600}},r.qty||1),
+            e("td",{style:{padding:"10px 12px",color:"#64748b"}},r.unit||""),
+            e("td",{style:{padding:"10px 12px",color:"#94a3b8",fontSize:11,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.description||"\u2014"),
+            admin&&e("td",{style:{padding:"10px 12px",display:"flex",gap:4}},
+              e("button",{className:"edit-icon",style:{width:24,height:24,fontSize:10},onClick:function(){_edit[1](r)}},"\u270F"),
+              e("button",{className:"del-icon",style:{width:24,height:24},onClick:function(){delRes(r.id)}},"\u2715")))
+        })))),
+    _showAdd[0]&&e(ResourceModal,{projectId:projectId,onClose:function(){_showAdd[1](false)},reload:reload}),
+    _edit[0]&&e(ResourceModal,{item:_edit[0],projectId:projectId,onClose:function(){_edit[1](null)},reload:reload})
+  );
+}
+
 function ProjReports(p){
   var reports=p.reports,admin=p.admin,projectId=p.projectId,reload=p.reload;
   var _show=useState(false),_edit=useState(null),_expanded=useState(null);
@@ -1483,10 +1632,6 @@ function PrintAllView(p){
         return e("div",{key:s.k,style:{marginBottom:6}},e("strong",null,s.l+": "),wr[0][s.k])}))
   );
 }
-
-// ══════════════════════════════════════════
-// ACTIVITY LOG (Admin only)
-// ══════════════════════════════════════════
 function ProjLog(p){
   var _logs=useState([]),_loading=useState(true);
   useEffect(function(){
@@ -1609,33 +1754,30 @@ function App(){
 
   if(!connected)return e(SetupScreen,{onConnected:function(){_connected[1](true)}});
 
-  var now=new Date();
+  var now=new Date();var mob=useMobile();
   var dateStr=now.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"});
 
   return e("div",{style:{minHeight:"100vh"}},
-    // Single clean top bar (no more admin-bar + gradient header)
-    e("div",{style:{height:56,background:"#fff",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",padding:"0 28px",gap:12,position:"sticky",top:0,zIndex:50}},
-      // Logo + Title
-      e("div",{style:{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#1B2A4A,#2471A3)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",flexShrink:0},onClick:function(){_selectedProject[1](null)}},"PM"),
-      e("div",{style:{marginRight:8,cursor:"pointer"},onClick:function(){_selectedProject[1](null)}},
-        e("div",{style:{fontSize:15,fontWeight:800,color:"#1B2A4A",lineHeight:1}},"SCCI OneHub"),
-        e("div",{style:{fontSize:9,color:"#94a3b8",fontWeight:600}},"e-Project Management")),
+    // Top bar — responsive
+    e("div",{style:{minHeight:mob?48:56,background:"#fff",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",padding:mob?"0 12px":"0 28px",gap:mob?6:12,position:"sticky",top:0,zIndex:50,flexWrap:mob?"wrap":"nowrap"}},
+      e("div",{style:{width:mob?28:34,height:mob?28:34,borderRadius:8,background:"linear-gradient(135deg,#1B2A4A,#2471A3)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:mob?10:12,color:"#fff",cursor:"pointer",flexShrink:0},onClick:function(){_selectedProject[1](null)}},"PM"),
+      e("div",{style:{marginRight:4,cursor:"pointer",minWidth:0},onClick:function(){_selectedProject[1](null)}},
+        e("div",{style:{fontSize:mob?13:15,fontWeight:800,color:"#1B2A4A",lineHeight:1}},"SCCI OneHub"),
+        !mob&&e("div",{style:{fontSize:9,color:"#94a3b8",fontWeight:600}},"e-Project Management")),
       e("div",{style:{flex:1}}),
-      // Date
-      e("span",{style:{fontSize:11,color:"#94a3b8",marginRight:4}},dateStr),
-      // Action buttons
-      e("button",{style:{width:34,height:34,borderRadius:8,border:"1px solid #e2e8f0",background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14},onClick:loadProjects,title:"Refresh"},"\u21BB"),
-      admin&&userRole==="admin"&&e("button",{className:"btn",style:{background:"#f1f5f9",color:"#64748b",border:"1px solid #e2e8f0",fontSize:10,padding:"6px 10px"},onClick:function(){_showUsers[1](true)}},"\uD83D\uDC65 Users"),
-      admin?e("div",{style:{display:"flex",alignItems:"center",gap:8}},
-        e("div",{style:{width:30,height:30,borderRadius:8,background:"linear-gradient(135deg,#17B8A6,#2471A3)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:11,color:"#fff"}},(userName||"A").charAt(0).toUpperCase()),
-        e("div",null,e("div",{style:{fontSize:11,fontWeight:600,color:"#1B2A4A"}},userName||"Admin"),e("div",{style:{fontSize:9,color:"#94a3b8"}},userRole)),
-        e("button",{className:"btn",style:{background:"#f1f5f9",color:"#64748b",border:"1px solid #e2e8f0",fontSize:10,padding:"6px 10px"},onClick:function(){_admin[1](false)}},"Logout")
-      ):e("button",{className:"btn btn-primary",style:{fontSize:10,padding:"6px 14px"},onClick:function(){_showLogin[1](true)}},"\uD83D\uDD12 Sign In")
+      !mob&&e("span",{style:{fontSize:11,color:"#94a3b8",marginRight:4}},dateStr),
+      e("button",{style:{width:mob?30:34,height:mob?30:34,borderRadius:8,border:"1px solid #e2e8f0",background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,flexShrink:0},onClick:loadProjects,title:"Refresh"},"\u21BB"),
+      admin&&userRole==="admin"&&!mob&&e("button",{className:"btn",style:{background:"#f1f5f9",color:"#64748b",border:"1px solid #e2e8f0",fontSize:10,padding:"6px 10px"},onClick:function(){_showUsers[1](true)}},"\uD83D\uDC65 Users"),
+      admin?e("div",{style:{display:"flex",alignItems:"center",gap:mob?4:8}},
+        e("div",{style:{width:mob?26:30,height:mob?26:30,borderRadius:8,background:"linear-gradient(135deg,#17B8A6,#2471A3)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:mob?9:11,color:"#fff",flexShrink:0}},(userName||"A").charAt(0).toUpperCase()),
+        !mob&&e("div",null,e("div",{style:{fontSize:11,fontWeight:600,color:"#1B2A4A"}},userName||"Admin"),e("div",{style:{fontSize:9,color:"#94a3b8"}},userRole)),
+        e("button",{className:"btn",style:{background:"#f1f5f9",color:"#64748b",border:"1px solid #e2e8f0",fontSize:mob?9:10,padding:mob?"4px 8px":"6px 10px"},onClick:function(){_admin[1](false)}},mob?"\u23FB":"Logout")
+      ):e("button",{className:"btn btn-primary",style:{fontSize:mob?9:10,padding:mob?"4px 10px":"6px 14px"},onClick:function(){_showLogin[1](true)}},"\uD83D\uDD12 Sign In"),
+      // Mobile: show Users + date on second row
+      mob&&admin&&userRole==="admin"&&e("button",{className:"btn",style:{background:"#f1f5f9",color:"#64748b",border:"1px solid #e2e8f0",fontSize:9,padding:"4px 8px"},onClick:function(){_showUsers[1](true)}},"\uD83D\uDC65")
     ),
-    // Budget restriction notice
-    admin&&userRole!=="admin"&&e("div",{style:{background:"#FDF2D0",padding:"5px 28px",fontSize:10,color:"#CC8E10",fontWeight:600}},"\u26A0 Budget editing restricted to admin role"),
-    // Main content
-    e("main",{className:"main-content",style:{maxWidth:1200,margin:"0 auto",padding:"24px 32px 48px"}},
+    admin&&userRole!=="admin"&&e("div",{style:{background:"#FDF2D0",padding:mob?"4px 12px":"5px 28px",fontSize:mob?9:10,color:"#CC8E10",fontWeight:600}},"\u26A0 Budget editing restricted to admin role"),
+    e("main",{className:"main-content",style:{maxWidth:1200,margin:"0 auto",padding:mob?"12px 12px 32px":"24px 32px 48px"}},
       selectedProject
         ?e(ProjectDetail,{projectId:selectedProject,admin:admin,userRole:userRole,userName:userName,onBack:function(){_selectedProject[1](null);loadProjects()}})
         :e(ProjectList,{projects:projects,admin:admin,loading:_loading[0],onSelect:function(id){_selectedProject[1](id)},onRefresh:loadProjects})
