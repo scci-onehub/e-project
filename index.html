@@ -297,7 +297,9 @@ function ProjectList(p){
           e("tbody",null,nonArch.map(function(pr){
             var pp2=Number(pr.plannedPct)||0,ap2=Number(pr.actualPct)||0,v2=Math.round((ap2-pp2)*10)/10;
             var ragC=v2>=0?"#10b981":v2>=-10?"#E9A620":"#E35B2D";
-            var light=v2>=0?"green":v2>=-10?"amber":"red";
+            // Status color mapping
+            var stDotMap={Active:"#10b981","Not Yet Started":"#cbd5e1","On-Hold":"#E9A620",Completed:"#2471A3",Archived:"#94a3b8",Cancel:"#E35B2D"};
+            var stDot=stDotMap[pr.status||"Active"]||"#cbd5e1";
             var bu=Number(pr.budgetUtil)||0;
             return e("tr",{key:pr.id,style:{borderBottom:"1px solid #f1f5f9",cursor:"pointer"},onClick:function(){p.onSelect(pr.id)},
               onMouseEnter:function(ev){ev.currentTarget.style.background="#f8fafc"},onMouseLeave:function(ev){ev.currentTarget.style.background="transparent"}},
@@ -322,11 +324,9 @@ function ProjectList(p){
               ):e("span",{style:{color:"#cbd5e1",fontSize:10}},"\u2014")),
               // Resources column
               e("td",{style:{padding:"10px",fontFamily:mono,fontSize:11,color:"#64748b"}},pr.resourceCount||0),
-              // Traffic light
-              e("td",{style:{padding:"10px"}},e("div",{style:{display:"flex",gap:3}},
-                e("div",{style:{width:14,height:14,borderRadius:"50%",background:light==="red"?"#E35B2D":"#e2e8f0",border:"2px solid "+(light==="red"?"#C9421A":"#d1d5db")}}),
-                e("div",{style:{width:14,height:14,borderRadius:"50%",background:light==="amber"?"#E9A620":"#e2e8f0",border:"2px solid "+(light==="amber"?"#CC8E10":"#d1d5db")}}),
-                e("div",{style:{width:14,height:14,borderRadius:"50%",background:light==="green"?"#10b981":"#e2e8f0",border:"2px solid "+(light==="green"?"#059669":"#d1d5db")}})))
+              // Status dot
+              e("td",{style:{padding:"10px",textAlign:"center"}},
+                e("div",{style:{width:16,height:16,borderRadius:"50%",background:stDot,margin:"0 auto",boxShadow:"0 0 0 3px "+stDot+"33"},title:pr.status||"Active"}))
             )
           }))
         ))
