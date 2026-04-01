@@ -2677,7 +2677,7 @@ function UserManagement(p){
       e("strong",null,"System Roles: "),
       e("span",{style:{color:"#EF4A00",fontWeight:600}},"admin")," \u2014 full access + user management. ",
       e("span",{style:{color:"#8B5CF6",fontWeight:600}},"project_admin")," \u2014 all projects, no budget edit. ",
-      e("span",{style:{color:"#487FFF",fontWeight:600}},"pmo")," \u2014 monitor + reporting. ",
+      e("span",{style:{color:"#487FFF",fontWeight:600}},"pmo")," \u2014 monitor, reporting & budget. ",
       e("span",{style:{color:"#D97706",fontWeight:600}},"project_owner")," \u2014 own projects only. ",
       e("span",{style:{color:"#45B369",fontWeight:600}},"bod")," \u2014 read-only dashboard. ",
       e("span",{style:{color:"#6B7280",fontWeight:600}},"external")," \u2014 assigned projects only."),
@@ -2734,7 +2734,7 @@ function UserModal(p){
       e("div",{style:{flex:1}},e("label",{className:"label"},"Role"),e("select",{className:"select",value:_role[0],onChange:function(ev){_role[1](ev.target.value)}},
         e("option",{value:"admin"},"Admin \u2014 Full access + User mgmt"),
         e("option",{value:"project_admin"},"Project Admin \u2014 All projects, no budget"),
-        e("option",{value:"pmo"},"PMO Officer \u2014 Monitor all, reporting"),
+        e("option",{value:"pmo"},"PMO Officer \u2014 Monitor all, reporting & budget"),
         e("option",{value:"project_owner"},"Project Owner \u2014 Own projects only"),
         e("option",{value:"bod"},"BOD \u2014 Read-only dashboard"),
         e("option",{value:"external"},"External \u2014 Specific projects only"))),
@@ -2749,7 +2749,7 @@ function UserModal(p){
     e("div",{style:{background:"#F5F6FA",borderRadius:8,padding:"10px 12px",marginBottom:16,fontSize:11,color:"#6B7280"}},
       _role[0]==="admin"?"\uD83D\uDD13 Full access: create/edit/delete everything, manage users, edit budgets":
       _role[0]==="project_admin"?"\u2699 Edit all projects, tasks, risks, resources. Cannot manage users or edit budgets":
-      _role[0]==="pmo"?"\uD83D\uDCCB View all projects. Can add risks, issues, reports, snapshots. Cannot create/delete projects or edit budgets":
+      _role[0]==="pmo"?"\uD83D\uDCCB View all projects. Can edit tasks, risks, issues, budget plan & realization, reports":
       _role[0]==="project_owner"?"\uD83D\uDC64 Can see and edit assigned projects including budget plan & realization":
       _role[0]==="bod"?"\uD83D\uDCCA Read-only access to PMO dashboard and all project details. For board-level monitoring":
       _role[0]==="external"?"\uD83D\uDD12 Read-only access to specific assigned projects only. Admin controls which projects are visible":
@@ -3522,7 +3522,7 @@ function App(){
   // Permission helpers
   var canManageUsers=userRole==="admin";
   var canCreateProject=userRole==="admin"||userRole==="project_admin"||userRole==="pmo"||userRole==="project_owner";
-  var canEditProject=userRole==="admin"||userRole==="project_admin"||userRole==="project_owner";
+  var canEditProject=userRole==="admin"||userRole==="project_admin"||userRole==="project_owner"||userRole==="pmo";
 
   function loadProjects(){_loading[1](true);apiGet("getProjects").then(function(d){if(d.ok)_allProjects[1](d.projects||[])}).catch(function(){}).finally(function(){_loading[1](false)})}
   function loadNotifications(){apiGet("getNotifications",{role:userRole,user:userName}).then(function(d){if(d.ok){
