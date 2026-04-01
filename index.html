@@ -2528,14 +2528,14 @@ function ProjStakeholders(p){
 }
 
 function ProjLog(p){
-  var _logs=useState([]),_loading=useState(true),_groupBy=useState("day"),_delFrom=useState(""),_delTo=useState(""),_deleting=useState(false);
+  var _logs=useState([]),_loading=useState(true),_groupBy=useState("day"),_delFrom=useState(""),_delTo=useState(""),_deleting=useState(false),_view=useState("activity");
   function load(){_loading[1](true);apiGet("getActivityLog",{projectId:p.projectId||""}).then(function(d){if(d.ok)_logs[1](d.logs||[])}).finally(function(){_loading[1](false)})}
   useEffect(function(){load()},[p.projectId]);
 
   // Group logs
   function getKey(ts){
     if(!ts)return"Unknown";
-    var d=ts.slice(0,10);// "2026-04-01"
+    var d=ts.slice(0,10);
     if(_groupBy[0]==="year")return d.slice(0,4);
     if(_groupBy[0]==="month")return d.slice(0,7);
     return d;
@@ -2550,22 +2550,98 @@ function ProjLog(p){
     apiPost("deleteLogsByDate",{projectId:p.projectId||"",from:_delFrom[0],to:_delTo[0]||"9999-12-31"}).then(function(){load();_delFrom[1]("");_delTo[1]("")}).finally(function(){_deleting[1](false)})
   }
 
+  // Build user sessions: pair login → logout
+  function buildSessions(){
+    var authLogs=_logs[0].filter(function(l){return l.action==="userLogin"||l.action==="userLogout"}).sort(function(a,b){return(a.timestamp||"")>(b.timestamp||"")?1:-1});
+    var sessions=[],openSessions={};
+    authLogs.forEach(function(l){
+      var user=l.userName||"unknown";
+      if(l.action==="userLogin"){
+        openSessions[user]={user:user,loginTime:l.timestamp,logoutTime:null,detail:l.detail||""};
+      } else if(l.action==="userLogout"){
+        if(openSessions[user]){
+          openSessions[user].logoutTime=l.timestamp;
+          sessions.push(openSessions[user]);
+          delete openSessions[user];
+        } else {
+          sessions.push({user:user,loginTime:null,logoutTime:l.timestamp,detail:""});
+        }
+      }
+    });
+    // Add still-open sessions
+    Object.keys(openSessions).forEach(function(u){
+      openSessions[u].logoutTime=null; // still active
+      sessions.push(openSessions[u]);
+    });
+    return sessions.reverse(); // newest first
+  }
+
+  function fmtTs(ts){if(!ts)return"-";return ts.slice(0,19).replace("T"," ")}
+  function fmtTime(ts){if(!ts)return"--:--:--";var t=String(ts);var m=t.match(/(\d{2}:\d{2}:\d{2})/);return m?m[1]:t.length>=19?t.slice(11,19):"--:--:--"}
+  function fmtDuration(startTs,endTs){
+    if(!startTs||!endTs)return"-";
+    var s=new Date(startTs),en=new Date(endTs);
+    if(isNaN(s)||isNaN(en))return"-";
+    var diff=Math.floor((en-s)/1000);
+    if(diff<0)return"-";
+    var h=Math.floor(diff/3600),m=Math.floor((diff%3600)/60),sec=diff%60;
+    if(h>0)return h+"h "+m+"m "+sec+"s";
+    if(m>0)return m+"m "+sec+"s";
+    return sec+"s";
+  }
+  function fmtDurationHMS(startTs,endTs){
+    if(!startTs||!endTs)return"--:--:--";
+    var s=new Date(startTs),en=new Date(endTs);
+    if(isNaN(s)||isNaN(en))return"--:--:--";
+    var diff=Math.floor((en-s)/1000);
+    if(diff<0)return"--:--:--";
+    var h=String(Math.floor(diff/3600)).padStart(2,"0");
+    var m=String(Math.floor((diff%3600)/60)).padStart(2,"0");
+    var sec=String(diff%60).padStart(2,"0");
+    return h+":"+m+":"+sec;
+  }
+
+  var sessions=buildSessions();
+
   if(_loading[0])return e(Spinner);
   return e("div",{style:{animation:"fadeIn .3s"}},
     e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}},
       e("div",null,e("h2",{style:{fontSize:20,fontWeight:700,marginBottom:4}},"Activity Log"),
         e("p",{style:{fontSize:13,color:"#6B7280"}},"Admin-only audit trail \u2022 "+_logs[0].length+" entries")),
       e("div",{style:{display:"flex",gap:6}},
-        ["day","month","year"].map(function(g){return e("button",{key:g,className:"btn",style:{background:_groupBy[0]===g?"#487FFF":"#F3F4F6",color:_groupBy[0]===g?"#fff":"#6B7280",fontSize:11,padding:"5px 12px",textTransform:"capitalize"},onClick:function(){_groupBy[1](g)}},g)}))),
-    // Delete controls
-    e("div",{style:{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}},
+        ["day","month","year"].map(function(g){return e("button",{key:g,className:"btn",style:{background:_groupBy[0]===g&&_view[0]==="activity"?"#487FFF":"#F3F4F6",color:_groupBy[0]===g&&_view[0]==="activity"?"#fff":"#6B7280",fontSize:11,padding:"5px 12px",textTransform:"capitalize"},onClick:function(){_groupBy[1](g);_view[1]("activity")}},g)}))),
+    // View toggle: Activity Log vs User Sessions
+    e("div",{style:{display:"flex",gap:4,marginBottom:16}},
+      e("button",{className:"btn",style:{background:_view[0]==="activity"?"#487FFF":"#F3F4F6",color:_view[0]==="activity"?"#fff":"#6B7280",fontSize:12,padding:"7px 16px"},onClick:function(){_view[1]("activity")}},"\uD83D\uDCCB Activity Log"),
+      e("button",{className:"btn",style:{background:_view[0]==="sessions"?"#487FFF":"#F3F4F6",color:_view[0]==="sessions"?"#fff":"#6B7280",fontSize:12,padding:"7px 16px"},onClick:function(){_view[1]("sessions")}},"\uD83D\uDC64 User Sessions ("+sessions.length+")")),
+    // Delete controls (only in activity view)
+    _view[0]==="activity"&&e("div",{style:{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}},
       e("span",{style:{fontSize:11,color:"#6B7280",fontWeight:600}},"Delete logs:"),
       e("input",{type:"date",className:"input",value:_delFrom[0],onChange:function(ev){_delFrom[1](ev.target.value)},style:{width:140,fontSize:11,padding:"4px 8px"}}),
       e("span",{style:{fontSize:11,color:"#9CA3AF"}},"to"),
       e("input",{type:"date",className:"input",value:_delTo[0],onChange:function(ev){_delTo[1](ev.target.value)},style:{width:140,fontSize:11,padding:"4px 8px"}}),
       e("button",{className:"btn",style:{background:"rgba(239,74,0,.1)",color:"#EF4A00",fontSize:11,padding:"5px 12px"},onClick:deleteLogs,disabled:_deleting[0]},_deleting[0]?"Deleting...":"\uD83D\uDDD1 Delete Range")),
-    // Grouped logs
-    groupKeys.length===0?e("div",{className:"card",style:{padding:32,textAlign:"center",color:"#9CA3AF"}},"No activity logged yet"):
+
+    // ── USER SESSIONS VIEW ──
+    _view[0]==="sessions"&&(sessions.length===0?e("div",{className:"card",style:{padding:32,textAlign:"center",color:"#9CA3AF"}},"No login sessions recorded yet"):
+    e("div",{className:"card",style:{overflow:"hidden"}},
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
+        e("thead",null,e("tr",{style:{borderBottom:"2px solid #EBECEF",background:"#F5F6FA"}},
+          ["Username","Status","Start","End","Duration"].map(function(h){return e("th",{key:h,style:{textAlign:"left",padding:"10px 12px",fontWeight:700,color:"#6B7280",fontSize:10,textTransform:"uppercase"}},h)}))),
+        e("tbody",null,sessions.map(function(s,i){
+          var isActive=s.loginTime&&!s.logoutTime;
+          var durStr=fmtDurationHMS(s.loginTime,s.logoutTime);
+          return e("tr",{key:i,style:{borderBottom:"1px solid #F3F4F6",background:isActive?"rgba(69,179,105,.04)":"transparent"}},
+            e("td",{style:{padding:"10px 12px",fontWeight:600}},e("div",{style:{display:"flex",alignItems:"center",gap:8}},
+              e(Avatar,{name:s.user,size:24,fontSize:9}),s.user)),
+            e("td",{style:{padding:"10px 12px"}},isActive?e("div",{style:{display:"flex",alignItems:"center",gap:5}},e("div",{style:{width:6,height:6,borderRadius:"50%",background:"#45B369",animation:"pulse 2s infinite"}}),e(Badge,{bg:"rgba(69,179,105,.15)",color:"#45B369"},"Login")):e(Badge,{bg:"rgba(255,159,41,.1)",color:"#D97706"},"Logged Out")),
+            e("td",{style:{padding:"10px 12px",fontFamily:mono,fontSize:12,fontWeight:600,color:"#4B5563"}},fmtTime(s.loginTime)),
+            e("td",{style:{padding:"10px 12px",fontFamily:mono,fontSize:12,fontWeight:600,color:isActive?"#9CA3AF":"#4B5563"}},isActive?"\u2014":fmtTime(s.logoutTime)),
+            e("td",{style:{padding:"10px 12px",fontFamily:mono,fontSize:12,fontWeight:700,color:isActive?"#45B369":"#487FFF"}},isActive?"Active":durStr))
+        }))))),
+
+    // ── ACTIVITY LOG VIEW ──
+    _view[0]==="activity"&&(groupKeys.length===0?e("div",{className:"card",style:{padding:32,textAlign:"center",color:"#9CA3AF"}},"No activity logged yet"):
     groupKeys.map(function(k){var items=groups[k];
       return e("div",{key:k,className:"card",style:{marginBottom:12,overflow:"hidden"}},
         e("div",{style:{padding:"10px 16px",background:"#F5F6FA",borderBottom:"1px solid #EBECEF",display:"flex",justifyContent:"space-between",alignItems:"center"}},
@@ -2574,12 +2650,12 @@ function ProjLog(p){
         e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
           e("tbody",null,items.map(function(l,i){
             return e("tr",{key:l.id||i,style:{borderBottom:"1px solid #F3F4F6"}},
-              e("td",{style:{padding:"8px 12px",fontFamily:mono,fontSize:10,whiteSpace:"nowrap",color:"#9CA3AF",width:150}},l.timestamp?l.timestamp.slice(0,19).replace("T"," "):"-"),
+              e("td",{style:{padding:"8px 12px",fontFamily:mono,fontSize:10,whiteSpace:"nowrap",color:"#9CA3AF",width:150}},fmtTs(l.timestamp)),
               e("td",{style:{padding:"8px 12px",fontWeight:500,width:100}},l.userName||"system"),
-              e("td",{style:{padding:"8px 12px",width:120}},e(Badge,{bg:"#F3F4F6",color:"#4B5563"},l.action)),
+              e("td",{style:{padding:"8px 12px",width:120}},e(Badge,{bg:l.action==="userLogin"?"rgba(69,179,105,.15)":l.action==="userLogout"?"rgba(255,159,41,.1)":l.action==="loginFailed"?"rgba(239,74,0,.1)":"#F3F4F6",color:l.action==="userLogin"?"#45B369":l.action==="userLogout"?"#D97706":l.action==="loginFailed"?"#EF4A00":"#4B5563"},l.action)),
               e("td",{style:{padding:"8px 12px",color:"#6B7280",maxWidth:400,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},l.detail||"-"))
           }))))
-    })
+    }))
   );
 }
 
@@ -2805,6 +2881,148 @@ function TasksPage(p){
 // ══════════════════════════════════════════
 // MAIN APP
 // ══════════════════════════════════════════
+// OPERATIONS MANAGEMENT
+// ══════════════════════════════════════════
+function OfficeModal(p){
+  var o=p.item||{};var isEdit=!!o.id;var mob=useMobile();
+  var _name=useState(o.name||""),_type=useState(o.type||"Branch"),_addr=useState(o.address||""),_city=useState(o.city||""),_country=useState(o.country||""),_lat=useState(String(o.lat||"")),_lng=useState(String(o.lng||"")),_manager=useState(o.manager||""),_mgrEmail=useState(o.managerEmail||""),_mgrPhone=useState(o.managerPhone||""),_fte=useState(String(o.fte||0)),_status=useState(o.status||"Active"),_established=useState(o.established||""),_saving=useState(false);
+  function geocode(){var q=(_city[0]+", "+_country[0]).trim();if(!q||q===", ")return;
+    fetch("https://nominatim.openstreetmap.org/search?format=json&q="+encodeURIComponent(q)+"&limit=1")
+      .then(function(r){return r.json()}).then(function(d){if(d&&d[0]){_lat[1](String(Number(d[0].lat).toFixed(4)));_lng[1](String(Number(d[0].lon).toFixed(4)))}}).catch(function(){})}
+  function save(){if(!_name[0].trim())return;_saving[1](true);
+    var data={name:_name[0],type:_type[0],address:_addr[0],city:_city[0],country:_country[0],lat:Number(_lat[0])||0,lng:Number(_lng[0])||0,manager:_manager[0],managerEmail:_mgrEmail[0],managerPhone:_mgrPhone[0],fte:Number(_fte[0])||0,status:_status[0],established:_established[0]};
+    (isEdit?apiPost("updateOffice",data,o.id):apiPost("addOffice",data)).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})}
+  return e(Modal,{show:true,onClose:p.onClose,style:{maxWidth:620}},
+    e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},isEdit?"\u270F\uFE0F Edit Office":"\u2795 Add Office Location"),
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"2fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Office Name *"),e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value)}})),
+      e("div",null,e("label",{className:"label"},"Type"),e("select",{className:"select",value:_type[0],onChange:function(ev){_type[1](ev.target.value)}},["Headquarters","Branch","Representative Office","Lab","Warehouse"].map(function(t){return e("option",{key:t,value:t},t)})))),
+    e("div",{style:{marginBottom:12}},e("label",{className:"label"},"Address"),e("input",{className:"input",value:_addr[0],onChange:function(ev){_addr[1](ev.target.value)},placeholder:"Street address"})),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"City"),e("input",{className:"input",value:_city[0],onChange:function(ev){_city[1](ev.target.value)}})),
+      e("div",null,e("label",{className:"label"},"Country"),e("input",{className:"input",value:_country[0],onChange:function(ev){_country[1](ev.target.value)}})),
+      e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_status[0],onChange:function(ev){_status[1](ev.target.value)}},["Active","Planned","Closed"].map(function(s){return e("option",{key:s,value:s},s)})))),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Latitude"),e("input",{className:"input",type:"number",step:"0.0001",value:_lat[0],onChange:function(ev){_lat[1](ev.target.value)},placeholder:"-6.2088"})),
+      e("div",null,e("label",{className:"label"},"Longitude"),e("input",{className:"input",type:"number",step:"0.0001",value:_lng[0],onChange:function(ev){_lng[1](ev.target.value)},placeholder:"106.8456"})),
+      e("div",{style:{display:"flex",alignItems:"flex-end"}},e("button",{className:"btn btn-ghost",style:{width:"100%"},onClick:geocode},"\uD83D\uDCCD Auto-detect"))),
+    e("div",{style:{background:"rgba(72,127,255,.06)",borderRadius:8,padding:"12px 16px",marginBottom:12}},
+      e("div",{style:{fontSize:11,fontWeight:700,color:"#487FFF",marginBottom:8}},"\uD83D\uDC64 Branch Manager"),
+      e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:12}},
+        e("div",null,e("label",{className:"label"},"Manager Name"),e("input",{className:"input",value:_manager[0],onChange:function(ev){_manager[1](ev.target.value)}})),
+        e("div",null,e("label",{className:"label"},"Email"),e("input",{className:"input",type:"email",value:_mgrEmail[0],onChange:function(ev){_mgrEmail[1](ev.target.value)}})),
+        e("div",null,e("label",{className:"label"},"Phone"),e("input",{className:"input",value:_mgrPhone[0],onChange:function(ev){_mgrPhone[1](ev.target.value)}})))),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}},
+      e("div",null,e("label",{className:"label"},"No. of FTE"),e("input",{className:"input",type:"number",value:_fte[0],onChange:function(ev){_fte[1](ev.target.value)},min:0})),
+      e("div",null,e("label",{className:"label"},"Established Date"),e("input",{className:"input",type:"date",value:_established[0],onChange:function(ev){_established[1](ev.target.value)}}))),
+    e("div",{style:{display:"flex",gap:10}},
+      e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
+      e("button",{className:"btn btn-primary",onClick:save,disabled:_saving[0]||!_name[0].trim(),style:{flex:1}},_saving[0]?"Saving...":"Save")))
+}
+function LabModal(p){
+  var l=p.item||{};var isEdit=!!l.id;
+  var _name=useState(l.name||""),_officeId=useState(l.officeId||""),_type=useState(l.type||"Testing"),_capacity=useState(String(l.capacity||"")),_equipment=useState(l.equipment||""),_status=useState(l.status||"Active"),_desc=useState(l.description||""),_saving=useState(false);
+  function save(){if(!_name[0].trim())return;_saving[1](true);
+    var data={name:_name[0],officeId:_officeId[0],type:_type[0],capacity:Number(_capacity[0])||0,equipment:_equipment[0],status:_status[0],description:_desc[0]};
+    (isEdit?apiPost("updateLab",data,l.id):apiPost("addLab",data)).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})}
+  return e(Modal,{show:true,onClose:p.onClose},
+    e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},isEdit?"\u270F\uFE0F Edit Lab":"\u2795 Add Lab Facility"),
+    e("div",{style:{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Lab Name *"),e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value)}})),
+      e("div",null,e("label",{className:"label"},"Type"),e("select",{className:"select",value:_type[0],onChange:function(ev){_type[1](ev.target.value)}},["Testing","Research","Quality Control","Calibration","Environmental","Other"].map(function(t){return e("option",{key:t,value:t},t)})))),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Office Location"),e("select",{className:"select",value:_officeId[0],onChange:function(ev){_officeId[1](ev.target.value)}},e("option",{value:""},"-- Select --"),(p.offices||[]).map(function(o){return e("option",{key:o.id,value:o.id},o.name+" ("+o.city+")")}))),
+      e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_status[0],onChange:function(ev){_status[1](ev.target.value)}},["Active","Under Construction","Planned","Decommissioned"].map(function(s){return e("option",{key:s,value:s},s)})))),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Capacity (persons)"),e("input",{className:"input",type:"number",value:_capacity[0],onChange:function(ev){_capacity[1](ev.target.value)}})),
+      e("div",null,e("label",{className:"label"},"Key Equipment"),e("input",{className:"input",value:_equipment[0],onChange:function(ev){_equipment[1](ev.target.value)},placeholder:"e.g. Spectrometer, Centrifuge"}))),
+    e("div",{style:{marginBottom:16}},e("label",{className:"label"},"Description"),e("textarea",{className:"input",value:_desc[0],onChange:function(ev){_desc[1](ev.target.value)},rows:2,style:{resize:"vertical"}})),
+    e("div",{style:{display:"flex",gap:10}},
+      e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
+      e("button",{className:"btn btn-primary",onClick:save,disabled:_saving[0]||!_name[0].trim(),style:{flex:1}},_saving[0]?"Saving...":"Save")))
+}
+function OperationsMap(p){
+  var mapRef=useRef(null),leafletMap=useRef(null),markersRef=useRef([]);
+  var offices=p.offices||[];var mob=useMobile();
+  var typeColors={Headquarters:"#EF4A00",Branch:"#487FFF","Representative Office":"#45B369",Lab:"#8B5CF6",Warehouse:"#FF9F29"};
+  useEffect(function(){
+    if(!mapRef.current||typeof L==="undefined")return;
+    if(!leafletMap.current){leafletMap.current=L.map(mapRef.current,{zoomControl:true,scrollWheelZoom:true,attributionControl:false}).setView([0,110],3);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:18}).addTo(leafletMap.current)}
+    markersRef.current.forEach(function(m){leafletMap.current.removeLayer(m)});markersRef.current=[];
+    var bounds=[];
+    offices.forEach(function(o){if(!o.lat||!o.lng)return;var color=typeColors[o.type]||"#487FFF";var sz=o.type==="Headquarters"?22:16;
+      var icon=L.divIcon({className:"",html:'<div style="width:'+sz+'px;height:'+sz+'px;border-radius:50%;background:'+color+';border:3px solid #fff;box-shadow:0 0 0 3px '+color+'44,0 2px 8px rgba(0,0,0,.4)"></div>',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]});
+      var marker=L.marker([o.lat,o.lng],{icon:icon}).addTo(leafletMap.current);
+      marker.bindPopup('<div style="font-family:Inter,sans-serif;min-width:200px"><b style="font-size:14px">'+o.name+'</b><br><span style="font-size:11px;color:#6B7280">'+o.type+' \u2022 '+(o.city||"")+(o.country?", "+o.country:"")+'</span>'+(o.manager?'<br><span style="font-size:11px">\uD83D\uDC64 '+o.manager+'</span>':'')+'<br><span style="font-size:11px;color:#487FFF">\uD83D\uDC65 '+o.fte+' FTE</span></div>');
+      markersRef.current.push(marker);bounds.push([o.lat,o.lng])});
+    if(bounds.length>1)leafletMap.current.fitBounds(bounds,{padding:[40,40],maxZoom:10});else if(bounds.length===1)leafletMap.current.setView(bounds[0],8);
+  },[offices]);
+  useEffect(function(){return function(){if(leafletMap.current){leafletMap.current.remove();leafletMap.current=null}}},[]);
+  return e("div",{className:"card",style:{overflow:"hidden"}},
+    e("div",{style:{padding:"16px 20px",borderBottom:"1px solid #EBECEF",display:"flex",justifyContent:"space-between",alignItems:"center"}},
+      e("div",null,e("h3",{style:{fontSize:14,fontWeight:700}},"Office Locations Map"),e("span",{style:{fontSize:11,color:"#9CA3AF",marginLeft:8}},offices.filter(function(o){return o.lat&&o.lng}).length+" mapped")),
+      e("div",{style:{display:"flex",gap:8,flexWrap:"wrap"}},Object.keys(typeColors).map(function(t){return e("div",{key:t,style:{display:"flex",alignItems:"center",gap:3}},e("div",{style:{width:8,height:8,borderRadius:"50%",background:typeColors[t]}}),e("span",{style:{fontSize:8,color:"#6B7280"}},t))}))),
+    e("div",{ref:mapRef,style:{height:mob?300:420,width:"100%",background:"#F5F6FA"}}))
+}
+function OperationsPage(p){
+  var _tab=useState("offices"),tab=_tab[0];var _offices=useState([]),_labs=useState([]),_loading=useState(true);
+  var _showOffice=useState(false),_editOffice=useState(null),_showLab=useState(false),_editLab=useState(null);
+  var admin=p.admin;var mob=useMobile();
+  function load(){_loading[1](true);Promise.all([apiGet("getOffices"),apiGet("getLabs")]).then(function(res){if(res[0].ok)_offices[1](res[0].items||[]);if(res[1].ok)_labs[1](res[1].items||[])}).finally(function(){_loading[1](false)})}
+  useEffect(function(){load()},[]);
+  function delOffice(id){if(!confirm("Delete this office?"))return;apiPost("deleteOffice",null,id).then(load)}
+  function delLab(id){if(!confirm("Delete this lab?"))return;apiPost("deleteLab",null,id).then(load)}
+  var totalFTE=_offices[0].reduce(function(a,o){return a+(Number(o.fte)||0)},0);
+  var activeOffices=_offices[0].filter(function(o){return o.status==="Active"});
+  var activeLabs=_labs[0].filter(function(l){return l.status==="Active"});
+  var statusColors={Active:"#45B369",Planned:"#487FFF",Closed:"#9CA3AF","Under Construction":"#FF9F29",Decommissioned:"#9CA3AF"};
+  var typeIcons={Headquarters:"\uD83C\uDFE2",Branch:"\uD83C\uDFE0","Representative Office":"\uD83D\uDCCD",Lab:"\uD83E\uDDEA",Warehouse:"\uD83D\uDCE6"};
+  if(_loading[0])return e(Spinner);
+  return e("div",{style:{animation:"fadeIn .3s"}},
+    e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}},
+      e("div",null,e("h2",{style:{fontSize:22,fontWeight:700}},"Operations Management"),e("p",{style:{fontSize:13,color:"#6B7280"}},"Office locations, staffing, and lab facilities")),
+      admin&&e("div",{style:{display:"flex",gap:8}},e("button",{className:"btn btn-primary",onClick:function(){_editOffice[1](null);_showOffice[1](true)}},"\u2795 Add Office"),e("button",{className:"btn btn-ghost",onClick:function(){_editLab[1](null);_showLab[1](true)}},"\u2795 Add Lab"))),
+    // KPIs
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(5,1fr)",gap:12,marginBottom:20}},
+      [{v:_offices[0].length,l:"Total Offices",ic:"\uD83C\uDFE2",c:"#487FFF",cls:"kpi-1"},{v:activeOffices.length,l:"Active",ic:"\u2705",c:"#45B369",cls:"kpi-2"},{v:totalFTE,l:"Total FTE",ic:"\uD83D\uDC65",c:"#8B5CF6",cls:"kpi-5"},{v:activeLabs.length,l:"Labs",ic:"\uD83E\uDDEA",c:"#FF9F29",cls:"kpi-3"},{v:_offices[0].filter(function(o){return o.lat&&o.lng}).length,l:"Mapped",ic:"\uD83D\uDDFA",c:"#1F2937",cls:"kpi-1"}
+      ].map(function(s,i){return e("div",{key:i,className:"kpi-card "+s.cls},e("div",{style:{display:"flex",alignItems:"center",gap:10}},e("div",{style:{width:40,height:40,borderRadius:50,background:s.c+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}},s.ic),e("div",null,e("div",{style:{fontSize:22,fontWeight:800,fontFamily:mono,color:s.c}},s.v),e("div",{style:{fontSize:10,color:"#6B7280",fontWeight:600}},s.l))))})),
+    // Tabs
+    e("div",{style:{display:"flex",gap:0,marginBottom:20,borderBottom:"2px solid #EBECEF"}},
+      [{id:"offices",l:"Office Locations"},{id:"map",l:"Interactive Map"},{id:"labs",l:"Lab Facilities"}].map(function(t){return e("button",{key:t.id,className:"tab-btn "+(tab===t.id?"tab-active":"tab-inactive"),onClick:function(){_tab[1](t.id)}},t.l)})),
+    // OFFICES TAB
+    tab==="offices"&&(_offices[0].length===0?e("div",{className:"card",style:{padding:40,textAlign:"center"}},e("div",{style:{fontSize:32,marginBottom:8}},"\uD83C\uDFE2"),e("div",{style:{color:"#9CA3AF"}},"No offices yet")):
+      e("div",{className:"card",style:{overflow:"hidden"}},e("div",{style:{overflowX:"auto"}},e("table",null,
+        e("thead",null,e("tr",null,["Type","Office Name","Location","Branch Manager","Contact","FTE","Status",admin?"":""].map(function(h){return e("th",{key:h},h)}))),
+        e("tbody",null,_offices[0].map(function(o){var sc2=statusColors[o.status]||"#9CA3AF";
+          return e("tr",{key:o.id},
+            e("td",null,e(Badge,{bg:o.type==="Headquarters"?"rgba(239,74,0,.1)":"rgba(72,127,255,.1)",color:o.type==="Headquarters"?"#EF4A00":"#487FFF"},(typeIcons[o.type]||"")+" "+o.type)),
+            e("td",{style:{fontWeight:600}},o.name),
+            e("td",null,e("div",{style:{fontSize:12}},o.city||""),e("div",{style:{fontSize:10,color:"#9CA3AF"}},o.country||"")),
+            e("td",null,o.manager?e("div",{style:{fontWeight:500,fontSize:12}},o.manager):e("span",{style:{color:"#D1D5DB"}},"\u2014")),
+            e("td",null,o.managerEmail?e("div",null,e("div",{style:{fontSize:11,color:"#487FFF"}},o.managerEmail),o.managerPhone&&e("div",{style:{fontSize:10,color:"#9CA3AF"}},o.managerPhone)):"\u2014"),
+            e("td",{style:{fontFamily:mono,fontWeight:700,textAlign:"center"}},o.fte||0),
+            e("td",null,e("div",{style:{width:8,height:8,borderRadius:"50%",background:sc2,display:"inline-block",marginRight:6}}),e("span",{style:{fontSize:11}},o.status)),
+            admin&&e("td",null,e("div",{style:{display:"flex",gap:4}},e("button",{className:"edit-icon",style:{width:24,height:24,fontSize:10},onClick:function(){_editOffice[1](o);_showOffice[1](true)}},"\u270F"),e("button",{className:"del-icon",style:{width:24,height:24},onClick:function(){delOffice(o.id)}},"\u2715"))))})),
+        e("tfoot",null,e("tr",{style:{background:"#F5F6FA",fontWeight:700}},e("td",{colSpan:5},"Total"),e("td",{style:{fontFamily:mono,textAlign:"center"}},totalFTE),e("td",{colSpan:2}))))))),
+    // MAP TAB
+    tab==="map"&&e(OperationsMap,{offices:_offices[0]}),
+    // LABS TAB
+    tab==="labs"&&(_labs[0].length===0?e("div",{className:"card",style:{padding:40,textAlign:"center"}},e("div",{style:{fontSize:32,marginBottom:8}},"\uD83E\uDDEA"),e("div",{style:{color:"#9CA3AF"}},"No labs yet")):
+      e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16}},_labs[0].map(function(l){
+        var office=_offices[0].find(function(o){return o.id===l.officeId});var sc2=statusColors[l.status]||"#9CA3AF";
+        return e("div",{key:l.id,className:"card",style:{padding:20}},
+          e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}},
+            e("div",null,e("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:4}},e("span",{style:{fontSize:20}},"\uD83E\uDDEA"),e("h4",{style:{fontSize:15,fontWeight:700}},l.name)),
+              e("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},e(Badge,{bg:"rgba(139,92,246,.1)",color:"#8B5CF6"},l.type),e(Badge,{bg:sc2+"22",color:sc2},l.status),office&&e(Badge,{bg:"rgba(72,127,255,.1)",color:"#487FFF"},"\uD83C\uDFE2 "+office.name))),
+            admin&&e("div",{style:{display:"flex",gap:4}},e("button",{className:"edit-icon",style:{width:24,height:24,fontSize:10},onClick:function(){_editLab[1](l);_showLab[1](true)}},"\u270F"),e("button",{className:"del-icon",style:{width:24,height:24},onClick:function(){delLab(l.id)}},"\u2715"))),
+          l.capacity>0&&e("div",{style:{background:"rgba(139,92,246,.06)",borderRadius:8,padding:"10px",textAlign:"center",marginBottom:8}},e("div",{style:{fontSize:18,fontWeight:700,fontFamily:mono,color:"#8B5CF6"}},l.capacity),e("div",{style:{fontSize:9,color:"#6B7280"}},"Capacity")),
+          l.equipment&&e("div",{style:{fontSize:12,color:"#6B7280"}},"\uD83D\uDD27 "+l.equipment),
+          l.description&&e("div",{style:{fontSize:11,color:"#9CA3AF",marginTop:4}},l.description))}))),
+    _showOffice[0]&&e(OfficeModal,{item:_editOffice[0],onClose:function(){_showOffice[1](false);_editOffice[1](null)},reload:load}),
+    _showLab[0]&&e(LabModal,{item:_editLab[0],offices:_offices[0],onClose:function(){_showLab[1](false);_editLab[1](null)},reload:load}))
+}
+
+// ══════════════════════════════════════════
 // ══════════════════════════════════════════
 // PROFILE MODAL
 // ══════════════════════════════════════════
@@ -2929,14 +3147,14 @@ function App(){
         !isGuest&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_dashExpand[1](!_dashExpand[0])},style:{fontWeight:600}},"\uD83D\uDCCA"," Projects ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_dashExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
         !isGuest&&_dashExpand[0]&&e("li",{className:"sidebar-item"+(page==="overseas"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("overseas");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDF0F"," Overseas Project")),
         !isGuest&&_dashExpand[0]&&e("li",{className:"sidebar-item"+(page==="domestic"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("domestic");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDFE2"," Domestic Project")),
-        !isGuest&&_dashExpand[0]&&e("li",{className:"sidebar-item"+(page==="crm"?" active":"")},e("button",{onClick:function(){_page[1]("crm");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83D\uDCBC"," CRM")),
-        !isGuest&&_dashExpand[0]&&e("li",{className:"sidebar-item"+(page==="analytics"?" active":"")},e("button",{onClick:function(){_page[1]("analytics");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83D\uDCC8"," Analytics")),
 
-        // ── Digital Space (expandable) ── hidden for guest
+        // ── Digital Space ── hidden for guest
         !isGuest&&e("li",{className:"sidebar-divider"},"Digital Space"),
-        !isGuest&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_digiExpand[1](!_digiExpand[0])},style:{fontWeight:600}},"\uD83D\uDE80"," Digital Space ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_digiExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
-        !isGuest&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="workspace"?" active":"")},e("button",{onClick:function(){_page[1]("workspace");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83D\uDD17"," Workspace")),
+        !isGuest&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_digiExpand[1](!_digiExpand[0])},style:{fontWeight:600}},"\uD83D\uDE80"," Workspace ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_digiExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
+        !isGuest&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="workspace"?" active":"")},e("button",{onClick:function(){_page[1]("workspace");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83D\uDD17"," Links")),
         !isGuest&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="tasks"?" active":"")},e("button",{onClick:function(){_page[1]("tasks");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\u2705"," Tasks")),
+        !isGuest&&e("li",{className:"sidebar-item"+(page==="crm"?" active":"")},e("button",{onClick:function(){_page[1]("crm");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83D\uDCBC"," CRM")),
+        !isGuest&&e("li",{className:"sidebar-item"+(page==="analytics"?" active":"")},e("button",{onClick:function(){_page[1]("analytics");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83D\uDCC8"," Analytics")),
 
         // ── Management ──
         e("li",{className:"sidebar-divider"},"Management"),
