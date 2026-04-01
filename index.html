@@ -929,7 +929,7 @@ function ProjectList(p){
 
 function ProjectDetail(p){
   var admin=p.admin,projectId=p.projectId,onBack=p.onBack,userRole=p.userRole||"viewer",userName=p.userName||"";
-  var canEditBudget=admin&&userRole==="admin";var mob=useMobile();
+  var canEditBudget=admin&&(userRole==="admin"||userRole==="project_owner"||userRole==="pmo");var mob=useMobile();
   var canEdit=admin&&(userRole==="admin"||userRole==="project_admin"||userRole==="project_owner");
   var isGuest=userRole==="guest"||userRole==="viewer";
   var _data=useState(null),data=_data[0],setData=_data[1];
@@ -2750,7 +2750,7 @@ function UserModal(p){
       _role[0]==="admin"?"\uD83D\uDD13 Full access: create/edit/delete everything, manage users, edit budgets":
       _role[0]==="project_admin"?"\u2699 Edit all projects, tasks, risks, resources. Cannot manage users or edit budgets":
       _role[0]==="pmo"?"\uD83D\uDCCB View all projects. Can add risks, issues, reports, snapshots. Cannot create/delete projects or edit budgets":
-      _role[0]==="project_owner"?"\uD83D\uDC64 Can only see and edit projects where they are the Manager. No budget editing":
+      _role[0]==="project_owner"?"\uD83D\uDC64 Can see and edit assigned projects including budget plan & realization":
       _role[0]==="bod"?"\uD83D\uDCCA Read-only access to PMO dashboard and all project details. For board-level monitoring":
       _role[0]==="external"?"\uD83D\uDD12 Read-only access to specific assigned projects only. Admin controls which projects are visible":
       "Select a role"),
@@ -2765,21 +2765,24 @@ function UserModal(p){
 // ══════════════════════════════════════════
 function OperationsPage(p){
   var admin=p.admin,mob=useMobile();
-  var _offices=useState([]),_labs=useState([]),_revenue=useState([]),_loading=useState(true);
-  var _tab=useState("overview"),_showOffice=useState(false),_editOffice=useState(null),_showLab=useState(false),_editLab=useState(null),_showRev=useState(false),_editRev=useState(null);
+  var _offices=useState([]),_labs=useState([]),_revenue=useState([]),_compliance=useState([]),_loading=useState(true);
+  var _tab=useState("overview"),_showOffice=useState(false),_editOffice=useState(null),_showLab=useState(false),_editLab=useState(null),_showRev=useState(false),_editRev=useState(null),_showComp=useState(false),_editComp=useState(null);
   var _revYear=useState(String(new Date().getFullYear()));
+
+  var allProjects=p.projects||[];
 
   function load(){_loading[1](true);
     Promise.all([
-      apiGet("getOffices"),apiGet("getLabs"),apiGet("getRevenue")
+      apiGet("getOffices"),apiGet("getLabs"),apiGet("getRevenue"),apiGet("getCompliance")
     ]).then(function(res){
       if(res[0].ok)_offices[1](res[0].items||[]);
       if(res[1].ok)_labs[1](res[1].items||[]);
       if(res[2].ok)_revenue[1](res[2].items||[]);
+      if(res[3].ok)_compliance[1](res[3].items||[]);
     }).finally(function(){_loading[1](false)})}
   useEffect(function(){load()},[]);
 
-  var offices=_offices[0],labs=_labs[0],revenue=_revenue[0];
+  var offices=_offices[0],labs=_labs[0],revenue=_revenue[0],compliance=_compliance[0];
 
   // KPIs
   var totalFTE=offices.reduce(function(a,o){return a+(Number(o.ftePermanent)||0)+(Number(o.fteContract)||0)+(Number(o.fteFreelance)||0)},0);
@@ -2860,9 +2863,14 @@ function OperationsPage(p){
     (_editRev[0]?apiPost(action,data,_editRev[0].id):apiPost(action,data)).then(function(d){if(d.ok){load();_showRev[1](false);_editRev[1](null)}})
   }
   function delRev(id){if(confirm("Delete?"))apiPost("deleteRevenue",null,id).then(load)}
+  function saveComp(data){
+    var action=_editComp[0]?"updateCompliance":"addCompliance";
+    (_editComp[0]?apiPost(action,data,_editComp[0].id):apiPost(action,data)).then(function(d){if(d.ok){load();_showComp[1](false);_editComp[1](null)}})
+  }
+  function delComp(id){if(confirm("Delete this item?"))apiPost("deleteCompliance",null,id).then(load)}
 
   if(_loading[0])return e(Spinner);
-  var tabs=["overview","offices","labs","revenue"];
+  var tabs=["overview","offices","staffing","labs","revenue","projects","compliance"];
 
   return e("div",{style:{animation:"fadeIn .3s"}},
     e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
@@ -2870,11 +2878,12 @@ function OperationsPage(p){
       admin&&e("div",{style:{display:"flex",gap:6}},
         _tab[0]==="offices"&&e("button",{className:"btn btn-primary",onClick:function(){_editOffice[1](null);_showOffice[1](true)}},"\u2795 Add Office"),
         _tab[0]==="labs"&&e("button",{className:"btn btn-primary",onClick:function(){_editLab[1](null);_showLab[1](true)}},"\u2795 Add Lab"),
-        _tab[0]==="revenue"&&e("button",{className:"btn btn-primary",onClick:function(){_editRev[1](null);_showRev[1](true)}},"\u2795 Add Revenue"))),
+        _tab[0]==="revenue"&&e("button",{className:"btn btn-primary",onClick:function(){_editRev[1](null);_showRev[1](true)}},"\u2795 Add Revenue"),
+        _tab[0]==="compliance"&&e("button",{className:"btn btn-primary",onClick:function(){_editComp[1](null);_showComp[1](true)}},"\u2795 Add License"))),
 
     // Tabs
     e("div",{style:{display:"flex",gap:0,borderBottom:"2px solid #EBECEF",marginBottom:20}},
-      tabs.map(function(t){return e("button",{key:t,className:"tab-btn "+(t===_tab[0]?"tab-active":"tab-inactive"),onClick:function(){_tab[1](t)}},{overview:"Overview",offices:"Offices ("+offices.length+")",labs:"Lab Facilities ("+labs.length+")",revenue:"Revenue"}[t])})),
+      tabs.map(function(t){return e("button",{key:t,className:"tab-btn "+(t===_tab[0]?"tab-active":"tab-inactive"),onClick:function(){_tab[1](t)},style:{fontSize:mob?10:12,padding:mob?"8px 6px":"8px 14px"}},{overview:"Overview",offices:"Offices",staffing:"Staffing",labs:"Labs",revenue:"Revenue",projects:"Projects",compliance:"Compliance"}[t])})),
 
     // ═══ OVERVIEW TAB ═══
     _tab[0]==="overview"&&e("div",null,
@@ -3017,16 +3026,206 @@ function OperationsPage(p){
                   e("button",{className:"del-icon",style:{width:22,height:22},onClick:function(){delRev(r.id)}},"\u2715"))))
             }))))),
 
+    // ═══ STAFFING TAB ═══
+    _tab[0]==="staffing"&&e("div",null,
+      // Staffing KPIs
+      e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(5,1fr)",gap:12,marginBottom:20}},
+        (function(){
+          var perm=offices.reduce(function(a,o){return a+(Number(o.ftePermanent)||0)},0);
+          var cont=offices.reduce(function(a,o){return a+(Number(o.fteContract)||0)},0);
+          var free=offices.reduce(function(a,o){return a+(Number(o.fteFreelance)||0)},0);
+          var vac=offices.reduce(function(a,o){return a+(Number(o.vacancies)||0)},0);
+          return[{v:totalFTE,l:"Total Headcount",ic:"\uD83D\uDC65",c:"#487FFF",cls:"kpi-1"},{v:perm,l:"Permanent",ic:"\uD83D\uDCBC",c:"#45B369",cls:"kpi-2"},{v:cont,l:"Contract",ic:"\uD83D\uDCDD",c:"#FF9F29",cls:"kpi-3"},{v:free,l:"Freelance",ic:"\uD83C\uDF10",c:"#8B5CF6",cls:"kpi-5"},{v:vac,l:"Open Vacancies",ic:"\uD83D\uDCE2",c:vac>0?"#EF4A00":"#45B369",cls:"kpi-4"}]
+        })().map(function(s,i){return e("div",{key:i,className:"kpi-card "+s.cls},
+          e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+            e("div",{style:{width:40,height:40,borderRadius:50,background:s.c+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}},s.ic),
+            e("div",null,e("div",{style:{fontSize:10,color:"#6B7280",fontWeight:600}},s.l),e("div",{style:{fontSize:22,fontWeight:800,fontFamily:mono,color:s.c,marginTop:2}},s.v))))})),
+      // FTE by Office — horizontal stacked bars
+      e("div",{className:"card",style:{padding:20,marginBottom:16}},
+        e("h3",{style:{fontSize:14,fontWeight:700,marginBottom:16}},"Headcount by Office"),
+        offices.length===0?e("div",{style:{textAlign:"center",padding:24,color:"#9CA3AF"}},"No offices"):
+        offices.map(function(o){
+          var pe=Number(o.ftePermanent)||0,co=Number(o.fteContract)||0,fr=Number(o.fteFreelance)||0,tot=pe+co+fr,vac=Number(o.vacancies)||0;
+          var maxFTE=offices.reduce(function(a,o2){return Math.max(a,(Number(o2.ftePermanent)||0)+(Number(o2.fteContract)||0)+(Number(o2.fteFreelance)||0))},1);
+          return e("div",{key:o.id,style:{display:"flex",alignItems:"center",gap:12,marginBottom:12}},
+            e("div",{style:{width:mob?80:140,fontSize:12,fontWeight:600,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},o.name),
+            e("div",{style:{flex:1,display:"flex",flexDirection:"column",gap:2}},
+              e("div",{style:{display:"flex",height:20,borderRadius:4,overflow:"hidden",background:"#F3F4F6"}},
+                pe>0&&e("div",{style:{width:pe/maxFTE*100+"%",background:"#487FFF",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#fff",fontWeight:600,minWidth:pe>0?20:0},title:"Permanent: "+pe},pe>3?pe:""),
+                co>0&&e("div",{style:{width:co/maxFTE*100+"%",background:"#FF9F29",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#fff",fontWeight:600,minWidth:co>0?20:0},title:"Contract: "+co},co>3?co:""),
+                fr>0&&e("div",{style:{width:fr/maxFTE*100+"%",background:"#8B5CF6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#fff",fontWeight:600,minWidth:fr>0?20:0},title:"Freelance: "+fr},fr>3?fr:""))),
+            e("div",{style:{width:50,textAlign:"right",fontSize:13,fontWeight:700,fontFamily:mono,color:"#1F2937",flexShrink:0}},tot),
+            vac>0&&e("div",{style:{fontSize:10,fontWeight:600,color:"#EF4A00",background:"rgba(239,74,0,.1)",padding:"2px 6px",borderRadius:6,flexShrink:0}},vac+" open"))
+        }),
+        e("div",{style:{display:"flex",gap:16,marginTop:12,paddingTop:12,borderTop:"1px solid #F3F4F6"}},
+          [{l:"Permanent",c:"#487FFF"},{l:"Contract",c:"#FF9F29"},{l:"Freelance",c:"#8B5CF6"}].map(function(s){
+            return e("div",{key:s.l,style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:10,height:10,borderRadius:2,background:s.c}}),e("span",{style:{fontSize:10,color:"#6B7280"}},s.l))}))),
+      // FTE breakdown table
+      e("div",{className:"card",style:{overflow:"hidden"}},
+        e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
+          e("thead",null,e("tr",{style:{borderBottom:"2px solid #EBECEF",background:"#F5F6FA"}},
+            ["Office","Type","Permanent","Contract","Freelance","Total FTE","Vacancies"].map(function(h){return e("th",{key:h,style:{textAlign:["Permanent","Contract","Freelance","Total FTE","Vacancies"].indexOf(h)>=0?"center":"left",padding:"10px 12px",fontWeight:700,color:"#6B7280",fontSize:10,textTransform:"uppercase"}},h)}))),
+          e("tbody",null,offices.map(function(o){
+            var pe=Number(o.ftePermanent)||0,co=Number(o.fteContract)||0,fr=Number(o.fteFreelance)||0,tot=pe+co+fr,vac=Number(o.vacancies)||0;
+            return e("tr",{key:o.id,style:{borderBottom:"1px solid #F3F4F6"}},
+              e("td",{style:{padding:"10px 12px",fontWeight:600}},o.name),
+              e("td",{style:{padding:"10px 12px"}},e(Badge,{bg:getTC(o.type).bg,color:getTC(o.type).c},o.type)),
+              e("td",{style:{padding:"10px 12px",fontFamily:mono,fontWeight:600,textAlign:"center",color:"#487FFF"}},pe),
+              e("td",{style:{padding:"10px 12px",fontFamily:mono,fontWeight:600,textAlign:"center",color:"#FF9F29"}},co),
+              e("td",{style:{padding:"10px 12px",fontFamily:mono,fontWeight:600,textAlign:"center",color:"#8B5CF6"}},fr),
+              e("td",{style:{padding:"10px 12px",fontFamily:mono,fontWeight:800,textAlign:"center"}},tot),
+              e("td",{style:{padding:"10px 12px",textAlign:"center"}},vac>0?e("span",{style:{fontFamily:mono,fontWeight:700,color:"#EF4A00"}},vac):e("span",{style:{color:"#D1D5DB"}},"\u2014")))
+          }),
+          e("tr",{style:{background:"#F5F6FA",fontWeight:700}},
+            e("td",{colSpan:2,style:{padding:"10px 12px"}},"Total"),
+            e("td",{style:{padding:"10px 12px",fontFamily:mono,textAlign:"center",color:"#487FFF"}},offices.reduce(function(a,o){return a+(Number(o.ftePermanent)||0)},0)),
+            e("td",{style:{padding:"10px 12px",fontFamily:mono,textAlign:"center",color:"#FF9F29"}},offices.reduce(function(a,o){return a+(Number(o.fteContract)||0)},0)),
+            e("td",{style:{padding:"10px 12px",fontFamily:mono,textAlign:"center",color:"#8B5CF6"}},offices.reduce(function(a,o){return a+(Number(o.fteFreelance)||0)},0)),
+            e("td",{style:{padding:"10px 12px",fontFamily:mono,fontWeight:800,textAlign:"center"}},totalFTE),
+            e("td",{style:{padding:"10px 12px",fontFamily:mono,fontWeight:700,textAlign:"center",color:"#EF4A00"}},offices.reduce(function(a,o){return a+(Number(o.vacancies)||0)},0)||"\u2014")))))),
+
+    // ═══ PROJECTS PER OFFICE TAB ═══
+    _tab[0]==="projects"&&e("div",null,
+      (function(){
+        // Match projects to offices by city (case-insensitive)
+        var officeProjects=offices.map(function(o){
+          var oCity=(o.city||"").toLowerCase().trim(),oCntry=(o.country||"").toLowerCase().trim();
+          var matched=allProjects.filter(function(pr){
+            var pCity=(pr.city||"").toLowerCase().trim(),pCntry=(pr.country||"").toLowerCase().trim();
+            return(oCity&&pCity&&oCity===pCity)||(oCntry&&pCntry&&oCntry===pCntry&&oCity===pCity);
+          });
+          return{office:o,projects:matched};
+        });
+        var unmatched=allProjects.filter(function(pr){
+          return!offices.some(function(o){
+            var oCity=(o.city||"").toLowerCase().trim();
+            var pCity=(pr.city||"").toLowerCase().trim();
+            return oCity&&pCity&&oCity===pCity;
+          });
+        });
+        var totalLinked=officeProjects.reduce(function(a,op){return a+op.projects.length},0);
+        return e("div",null,
+          // KPIs
+          e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(4,1fr)",gap:12,marginBottom:20}},
+            [{v:allProjects.length,l:"Total Projects",ic:"\uD83D\uDCCA",c:"#487FFF",cls:"kpi-1"},
+             {v:totalLinked,l:"Linked to Offices",ic:"\uD83C\uDFE2",c:"#45B369",cls:"kpi-2"},
+             {v:unmatched.length,l:"Unlinked",ic:"\u2753",c:"#FF9F29",cls:"kpi-3"},
+             {v:allProjects.filter(function(pr){return(pr.status||"").toLowerCase()==="active"}).length,l:"Active Projects",ic:"\u26A1",c:"#8B5CF6",cls:"kpi-5"}
+            ].map(function(s,i){return e("div",{key:i,className:"kpi-card "+s.cls},
+              e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+                e("div",{style:{width:40,height:40,borderRadius:50,background:s.c+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}},s.ic),
+                e("div",null,e("div",{style:{fontSize:10,color:"#6B7280",fontWeight:600}},s.l),e("div",{style:{fontSize:22,fontWeight:800,fontFamily:mono,color:s.c,marginTop:2}},s.v))))})),
+          // Office cards with projects
+          e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16,marginBottom:20}},
+            officeProjects.map(function(op){
+              var o=op.office,pr=op.projects,tc=getTC(o.type);
+              var active=pr.filter(function(p2){return(p2.status||"").toLowerCase()==="active"}).length;
+              var completed=pr.filter(function(p2){return(p2.status||"").toLowerCase()==="completed"}).length;
+              var onhold=pr.filter(function(p2){return(p2.status||"").toLowerCase()==="on-hold"}).length;
+              return e("div",{key:o.id,className:"card",style:{padding:20}},
+                e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:12}},
+                  e("div",{style:{width:40,height:40,borderRadius:8,background:tc.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}},tc.icon),
+                  e("div",{style:{flex:1}},
+                    e("div",{style:{fontSize:14,fontWeight:700}},o.name),
+                    e("div",{style:{fontSize:11,color:"#9CA3AF"}},o.city+(o.country?", "+o.country:""))),
+                  e("div",{style:{fontSize:22,fontWeight:800,fontFamily:mono,color:pr.length>0?"#487FFF":"#D1D5DB"}},pr.length)),
+                pr.length===0?e("div",{style:{textAlign:"center",padding:12,color:"#D1D5DB",fontSize:12}},"No projects at this location"):
+                e("div",null,
+                  e("div",{style:{display:"flex",gap:6,marginBottom:10}},
+                    active>0&&e(Badge,{bg:"rgba(69,179,105,.15)",color:"#45B369"},active+" Active"),
+                    completed>0&&e(Badge,{bg:"rgba(36,113,163,.1)",color:"#2471A3"},completed+" Done"),
+                    onhold>0&&e(Badge,{bg:"rgba(233,166,32,.1)",color:"#E9A620"},onhold+" On-Hold")),
+                  pr.slice(0,5).map(function(p2){
+                    var sc2=STATUS_MAP_COLORS[p2.status]||"#45B369";
+                    return e("div",{key:p2.id,style:{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #F3F4F6",fontSize:12}},
+                      e("div",{style:{width:6,height:6,borderRadius:"50%",background:sc2,flexShrink:0}}),
+                      e("div",{style:{flex:1,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},p2.name),
+                      e("span",{style:{fontSize:10,fontFamily:mono,fontWeight:600,color:sc2}},p2.actualPct||0,"%"))
+                  }),
+                  pr.length>5&&e("div",{style:{fontSize:10,color:"#9CA3AF",marginTop:4}},"+"+(pr.length-5)+" more")))
+            })),
+          // Unmatched projects
+          unmatched.length>0&&e("div",{className:"card",style:{padding:20}},
+            e("h3",{style:{fontSize:14,fontWeight:700,marginBottom:12,color:"#FF9F29"}},"\u26A0 Projects Not Linked to Any Office ("+unmatched.length+")"),
+            e("div",{style:{fontSize:11,color:"#9CA3AF",marginBottom:12}},"These projects have cities that don\u2019t match any office location. Update project or office city to link them."),
+            e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:8}},
+              unmatched.map(function(p2){
+                return e("div",{key:p2.id,style:{display:"flex",alignItems:"center",gap:6,padding:8,background:"#F5F6FA",borderRadius:6,fontSize:11}},
+                  e("div",{style:{width:6,height:6,borderRadius:"50%",background:STATUS_MAP_COLORS[p2.status]||"#45B369",flexShrink:0}}),
+                  e("div",{style:{flex:1,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},p2.name),
+                  e("span",{style:{color:"#9CA3AF",fontSize:10}},p2.city||"no city"))
+              }))))
+      })()),
+
+    // ═══ COMPLIANCE TAB ═══
+    _tab[0]==="compliance"&&e("div",null,
+      (function(){
+        var now=new Date(),soon=new Date();soon.setDate(soon.getDate()+30);
+        var expired=compliance.filter(function(c){return c.expiryDate&&new Date(c.expiryDate+"T00:00:00")<now&&c.status!=="Renewed"});
+        var expiring=compliance.filter(function(c){if(!c.expiryDate||c.status==="Renewed")return false;var d=new Date(c.expiryDate+"T00:00:00");return d>=now&&d<=soon});
+        var valid=compliance.filter(function(c){if(!c.expiryDate)return c.status!=="Expired";var d=new Date(c.expiryDate+"T00:00:00");return d>soon||c.status==="Renewed"});
+        return e("div",null,
+          // KPIs
+          e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(4,1fr)",gap:12,marginBottom:20}},
+            [{v:compliance.length,l:"Total Licenses",ic:"\uD83D\uDCDC",c:"#487FFF",cls:"kpi-1"},
+             {v:valid.length,l:"Active / Valid",ic:"\u2705",c:"#45B369",cls:"kpi-2"},
+             {v:expiring.length,l:"Expiring Soon",ic:"\u26A0\uFE0F",c:"#FF9F29",cls:"kpi-3"},
+             {v:expired.length,l:"Expired",ic:"\u274C",c:"#EF4A00",cls:"kpi-4"}
+            ].map(function(s,i){return e("div",{key:i,className:"kpi-card "+s.cls},
+              e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+                e("div",{style:{width:40,height:40,borderRadius:50,background:s.c+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}},s.ic),
+                e("div",null,e("div",{style:{fontSize:10,color:"#6B7280",fontWeight:600}},s.l),e("div",{style:{fontSize:22,fontWeight:800,fontFamily:mono,color:s.c,marginTop:2}},s.v))))})),
+          // Expired alerts
+          expired.length>0&&e("div",{style:{background:"rgba(239,74,0,.06)",border:"1px solid rgba(239,74,0,.15)",borderRadius:10,padding:"14px 18px",marginBottom:16}},
+            e("div",{style:{fontSize:13,fontWeight:700,color:"#EF4A00",marginBottom:8}},"\u26A0 "+expired.length+" Expired License"+(expired.length!==1?"s":"")),
+            expired.map(function(c){var office=offices.find(function(o){return o.id===c.officeId});
+              return e("div",{key:c.id,style:{fontSize:12,padding:"4px 0",display:"flex",gap:8}},
+                e("span",{style:{fontWeight:600}},c.name),
+                e("span",{style:{color:"#6B7280"}},(office?office.name:"")+" \u2022 Expired "+fmtF(c.expiryDate)))})),
+          // Expiring soon alerts
+          expiring.length>0&&e("div",{style:{background:"rgba(255,159,41,.06)",border:"1px solid rgba(255,159,41,.15)",borderRadius:10,padding:"14px 18px",marginBottom:16}},
+            e("div",{style:{fontSize:13,fontWeight:700,color:"#D97706",marginBottom:8}},"\u23F0 "+expiring.length+" Expiring Within 30 Days"),
+            expiring.map(function(c){var office=offices.find(function(o){return o.id===c.officeId});var days=Math.ceil((new Date(c.expiryDate+"T00:00:00")-now)/864e5);
+              return e("div",{key:c.id,style:{fontSize:12,padding:"4px 0",display:"flex",gap:8}},
+                e("span",{style:{fontWeight:600}},c.name),
+                e("span",{style:{color:"#6B7280"}},(office?office.name:"")+" \u2022 "+days+" day"+(days!==1?"s":"")+" left"))})),
+          // Table
+          e("div",{className:"card",style:{overflow:"hidden"}},
+            e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
+              e("thead",null,e("tr",{style:{borderBottom:"2px solid #EBECEF",background:"#F5F6FA"}},
+                ["Office","Type","License / Permit Name","Issued","Expires","Status",admin?"":""].map(function(h){return e("th",{key:h,style:{textAlign:"left",padding:"10px 12px",fontWeight:700,color:"#6B7280",fontSize:10,textTransform:"uppercase"}},h)}))),
+              e("tbody",null,compliance.length===0?e("tr",null,e("td",{colSpan:7,style:{padding:32,textAlign:"center",color:"#9CA3AF"}},"No compliance items. Click \u2795 Add License to get started.")):
+                compliance.map(function(c){
+                  var office=offices.find(function(o){return o.id===c.officeId});
+                  var isExp=c.expiryDate&&new Date(c.expiryDate+"T00:00:00")<now&&c.status!=="Renewed";
+                  var isSoon=c.expiryDate&&!isExp&&new Date(c.expiryDate+"T00:00:00")<=soon&&c.status!=="Renewed";
+                  var stBg=isExp?"rgba(239,74,0,.1)":isSoon?"rgba(255,159,41,.1)":"rgba(69,179,105,.1)";
+                  var stC=isExp?"#EF4A00":isSoon?"#D97706":"#45B369";
+                  var stL=isExp?"Expired":isSoon?"Expiring Soon":c.status==="Renewed"?"Renewed":"Active";
+                  return e("tr",{key:c.id,style:{borderBottom:"1px solid #F3F4F6",background:isExp?"rgba(239,74,0,.02)":""}},
+                    e("td",{style:{padding:"10px 12px",fontWeight:500}},office?office.name:"\u2014"),
+                    e("td",{style:{padding:"10px 12px"}},e(Badge,{bg:"rgba(72,127,255,.08)",color:"#487FFF"},c.type||"License")),
+                    e("td",{style:{padding:"10px 12px",fontWeight:600}},c.name),
+                    e("td",{style:{padding:"10px 12px",fontSize:11,color:"#6B7280"}},c.issuedDate?fmtF(c.issuedDate):"\u2014"),
+                    e("td",{style:{padding:"10px 12px",fontSize:11,fontWeight:isExp||isSoon?700:400,color:isExp?"#EF4A00":isSoon?"#D97706":"#6B7280"}},c.expiryDate?fmtF(c.expiryDate):"\u2014"),
+                    e("td",{style:{padding:"10px 12px"}},e(Badge,{bg:stBg,color:stC},stL)),
+                    admin&&e("td",{style:{padding:"10px 12px"}},e("div",{style:{display:"flex",gap:4}},
+                      e("button",{className:"edit-icon",style:{width:22,height:22,fontSize:10},onClick:function(){_editComp[1](c);_showComp[1](true)}},"\u270F"),
+                      e("button",{className:"del-icon",style:{width:22,height:22},onClick:function(){delComp(c.id)}},"\u2715"))))
+                })))))
+      })()),
+
     // ═══ MODALS ═══
     _showOffice[0]&&e(OfficeModal,{item:_editOffice[0],onSave:saveOffice,onClose:function(){_showOffice[1](false);_editOffice[1](null)}}),
     _showLab[0]&&e(LabModal,{item:_editLab[0],offices:offices,onSave:saveLab,onClose:function(){_showLab[1](false);_editLab[1](null)}}),
-    _showRev[0]&&e(RevenueModal,{item:_editRev[0],offices:offices,year:_revYear[0],onSave:saveRev,onClose:function(){_showRev[1](false);_editRev[1](null)}})
+    _showRev[0]&&e(RevenueModal,{item:_editRev[0],offices:offices,year:_revYear[0],onSave:saveRev,onClose:function(){_showRev[1](false);_editRev[1](null)}}),
+    _showComp[0]&&e(ComplianceModal,{item:_editComp[0],offices:offices,onSave:saveComp,onClose:function(){_showComp[1](false);_editComp[1](null)}})
   );
 }
 
 // Office Modal
 function OfficeModal(p){var o=p.item||{};var mob=useMobile();
-  var _name=useState(o.name||""),_type=useState(o.type||"Branch"),_status=useState(o.status||"Active"),_country=useState(o.country||""),_city=useState(o.city||""),_addr=useState(o.address||""),_lat=useState(String(o.lat||"")),_lng=useState(String(o.lng||"")),_mgr=useState(o.manager||""),_mgrPhone=useState(o.managerPhone||""),_mgrEmail=useState(o.managerEmail||""),_perm=useState(String(o.ftePermanent||0)),_cont=useState(String(o.fteContract||0)),_free=useState(String(o.fteFreelance||0)),_est=useState(o.established||""),_notes=useState(o.notes||""),_saving=useState(false);
+  var _name=useState(o.name||""),_type=useState(o.type||"Branch"),_status=useState(o.status||"Active"),_country=useState(o.country||""),_city=useState(o.city||""),_addr=useState(o.address||""),_lat=useState(String(o.lat||"")),_lng=useState(String(o.lng||"")),_mgr=useState(o.manager||""),_mgrPhone=useState(o.managerPhone||""),_mgrEmail=useState(o.managerEmail||""),_perm=useState(String(o.ftePermanent||0)),_cont=useState(String(o.fteContract||0)),_free=useState(String(o.fteFreelance||0)),_vac=useState(String(o.vacancies||0)),_est=useState(o.established||""),_notes=useState(o.notes||""),_saving=useState(false);
   return e(Modal,{show:true,onClose:p.onClose,style:{maxWidth:620}},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},o.id?"\u270F\uFE0F Edit Office":"\u2795 Add Office"),
     e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"2fr 1fr 1fr",gap:12,marginBottom:12}},
@@ -3046,15 +3245,16 @@ function OfficeModal(p){var o=p.item||{};var mob=useMobile();
         e("div",null,e("label",{className:"label"},"Name"),e("input",{className:"input",value:_mgr[0],onChange:function(ev){_mgr[1](ev.target.value)}})),
         e("div",null,e("label",{className:"label"},"Phone"),e("input",{className:"input",value:_mgrPhone[0],onChange:function(ev){_mgrPhone[1](ev.target.value)}})),
         e("div",null,e("label",{className:"label"},"Email"),e("input",{className:"input",value:_mgrEmail[0],onChange:function(ev){_mgrEmail[1](ev.target.value)}})))),
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}},
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"1fr 1fr 1fr 1fr 1fr",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"FTE Permanent"),e("input",{className:"input",type:"number",value:_perm[0],onChange:function(ev){_perm[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"FTE Contract"),e("input",{className:"input",type:"number",value:_cont[0],onChange:function(ev){_cont[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"FTE Freelance"),e("input",{className:"input",type:"number",value:_free[0],onChange:function(ev){_free[1](ev.target.value)}})),
+      e("div",null,e("label",{className:"label"},"Vacancies"),e("input",{className:"input",type:"number",value:_vac[0],onChange:function(ev){_vac[1](ev.target.value)},placeholder:"0"})),
       e("div",null,e("label",{className:"label"},"Established"),e("input",{className:"input",type:"date",value:_est[0],onChange:function(ev){_est[1](ev.target.value)}}))),
     e("label",{className:"label"},"Notes"),e("textarea",{className:"input",value:_notes[0],onChange:function(ev){_notes[1](ev.target.value)},rows:2,style:{marginBottom:16,resize:"vertical"}}),
     e("div",{style:{display:"flex",gap:10}},
       e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
-      e("button",{className:"btn btn-primary",onClick:function(){if(!_name[0].trim())return;_saving[1](true);p.onSave({name:_name[0],type:_type[0],status:_status[0],country:_country[0],city:_city[0],address:_addr[0],lat:_lat[0]?Number(_lat[0]):"",lng:_lng[0]?Number(_lng[0]):"",manager:_mgr[0],managerPhone:_mgrPhone[0],managerEmail:_mgrEmail[0],ftePermanent:Number(_perm[0])||0,fteContract:Number(_cont[0])||0,fteFreelance:Number(_free[0])||0,established:_est[0],notes:_notes[0]})},disabled:_saving[0]||!_name[0].trim(),style:{flex:1}},_saving[0]?"Saving...":"Save")))
+      e("button",{className:"btn btn-primary",onClick:function(){if(!_name[0].trim())return;_saving[1](true);p.onSave({name:_name[0],type:_type[0],status:_status[0],country:_country[0],city:_city[0],address:_addr[0],lat:_lat[0]?Number(_lat[0]):"",lng:_lng[0]?Number(_lng[0]):"",manager:_mgr[0],managerPhone:_mgrPhone[0],managerEmail:_mgrEmail[0],ftePermanent:Number(_perm[0])||0,fteContract:Number(_cont[0])||0,fteFreelance:Number(_free[0])||0,vacancies:Number(_vac[0])||0,established:_est[0],notes:_notes[0]})},disabled:_saving[0]||!_name[0].trim(),style:{flex:1}},_saving[0]?"Saving...":"Save")))
 }
 
 // Lab Modal
@@ -3091,6 +3291,25 @@ function RevenueModal(p){var r=p.item||{};
     e("div",{style:{display:"flex",gap:10}},
       e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
       e("button",{className:"btn btn-primary",onClick:function(){_saving[1](true);p.onSave({officeId:_officeId[0],year:Number(_year[0]),month:Number(_month[0]),target:Number(_target[0])||0,actual:Number(_actual[0])||0})},disabled:_saving[0],style:{flex:1}},_saving[0]?"Saving...":"Save")))
+}
+
+// Compliance Modal
+function ComplianceModal(p){var c=p.item||{};
+  var _officeId=useState(c.officeId||""),_type=useState(c.type||"License"),_name=useState(c.name||""),_issued=useState(c.issuedDate||""),_expiry=useState(c.expiryDate||""),_status=useState(c.status||"Active"),_notes=useState(c.notes||""),_saving=useState(false);
+  return e(Modal,{show:true,onClose:p.onClose,style:{maxWidth:560}},
+    e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},c.id?"\u270F\uFE0F Edit License / Permit":"\u2795 Add License / Permit"),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Office *"),e("select",{className:"select",value:_officeId[0],onChange:function(ev){_officeId[1](ev.target.value)}},e("option",{value:""},"-- Select --"),(p.offices||[]).map(function(o){return e("option",{key:o.id,value:o.id},o.name)}))),
+      e("div",null,e("label",{className:"label"},"Type"),e("select",{className:"select",value:_type[0],onChange:function(ev){_type[1](ev.target.value)}},["License","Permit","Certification","Registration","Insurance","Tax","Other"].map(function(t){return e("option",{key:t,value:t},t)})))),
+    e("label",{className:"label"},"License / Permit Name *"),e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value)},placeholder:"e.g. Business License, ISO 9001",style:{marginBottom:12}}),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Issued Date"),e("input",{type:"date",className:"input",value:_issued[0],onChange:function(ev){_issued[1](ev.target.value)}})),
+      e("div",null,e("label",{className:"label"},"Expiry Date"),e("input",{type:"date",className:"input",value:_expiry[0],onChange:function(ev){_expiry[1](ev.target.value)}})),
+      e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_status[0],onChange:function(ev){_status[1](ev.target.value)}},["Active","Renewed","Expired","Pending","Suspended"].map(function(s){return e("option",{key:s,value:s},s)})))),
+    e("label",{className:"label"},"Notes"),e("textarea",{className:"input",value:_notes[0],onChange:function(ev){_notes[1](ev.target.value)},rows:2,style:{marginBottom:16,resize:"vertical"},placeholder:"Reference number, issuing authority, etc."}),
+    e("div",{style:{display:"flex",gap:10}},
+      e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
+      e("button",{className:"btn btn-primary",onClick:function(){if(!_name[0].trim()||!_officeId[0]){alert("Office and Name are required");return}_saving[1](true);p.onSave({officeId:_officeId[0],type:_type[0],name:_name[0],issuedDate:_issued[0],expiryDate:_expiry[0],status:_status[0],notes:_notes[0]})},disabled:_saving[0],style:{flex:1}},_saving[0]?"Saving...":"Save")))
 }
 
 // ══════════════════════════════════════════
@@ -3383,7 +3602,7 @@ function App(){
           ?e(ProjectDetail,{projectId:selectedProject,admin:canEditProject,userRole:userRole,userName:userName,onBack:function(){_selectedProject[1](null);loadProjects()}})
           :page==="crm"?e(CRMPage)
           :page==="analytics"?e(AnalyticsPage)
-          :page==="operations"?e(OperationsPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userRole:userRole})
+          :page==="operations"?e(OperationsPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userRole:userRole,projects:_allProjects[0]})
           :page==="workspace"?e(WorkspacePage)
           :page==="tasks"?e(TasksPage,{userName:userName})
           :e(ProjectList,{projects:page==="domestic"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Domestic"}):page==="overseas"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Overseas"}):projects,admin:canCreateProject,loading:_loading[0],onSelect:function(id){_selectedProject[1](id)},onRefresh:loadProjects,pageTitle:page==="domestic"?"Domestic Projects":page==="overseas"?"Overseas Projects":page==="mgmt"?"Management Dashboard":"All Projects",userName:userName})
