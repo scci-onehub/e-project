@@ -174,15 +174,14 @@ function apiGet(action,params){
   return fetch(url).then(function(r){return r.json()})
 }
 function apiPost(action,data,id){
-  var payload=JSON.stringify({action:action,data:data,id:id});
+  var ctx=window._userCtx||{};
+  var payload=JSON.stringify({action:action,data:data,id:id,_role:ctx.role||"",_userName:ctx.name||""});
   return fetch(getApiUrl(),{method:"POST",body:payload}).then(function(r){return r.json()}).then(function(d){
-    // If we got a ping response back, the POST was redirected and lost — retry via GET
     if(d.message&&d.message.indexOf("API")>=0&&action!=="ping"){
       return fetch(getApiUrl()+"?action=proxy&payload="+encodeURIComponent(payload)).then(function(r){return r.json()})
     }
     return d
   }).catch(function(){
-    // POST failed entirely — fallback to GET with payload param
     return fetch(getApiUrl()+"?action=proxy&payload="+encodeURIComponent(payload)).then(function(r){return r.json()})
   })
 }
@@ -429,7 +428,7 @@ function LoginModal(p){
   function login(){
     _loading[1](true);
     apiGet("auth",{user:_u[0],pass:_p2[0]}).then(function(d){
-      if(d.ok){p.onLogin(d.role||"bod",d.name||_u[0],d.assignedProjects||"",d.photo||"");if(p.onClose)p.onClose()}else _err[1]("Invalid credentials")
+      if(d.ok){p.onLogin(d.role||"bod",d.name||_u[0],d.assignedProjects||"",d.photo||"",d.allowedModules||"");if(p.onClose)p.onClose()}else _err[1]("Invalid credentials")
     }).catch(function(){_err[1]("Connection error")}).finally(function(){_loading[1](false)})
   }
   return e(Modal,{show:p.show,onClose:function(){}},
@@ -451,10 +450,10 @@ function LoginModal(p){
 // ══════════════════════════════════════════
 function ProjectModal(p){
   var proj=p.project||{};
-  var mob=useMobile();var _n=useState(proj.name||""),_c=useState(proj.client||""),_m=useState(proj.manager||""),_d=useState(proj.description||""),_sd=useState(proj.startDate||new Date().toISOString().slice(0,10)),_ed=useState(proj.endDate||"2026-12-31"),_pp=useState(String(proj.plannedPct||0)),_st=useState(proj.status||"Active"),_pri=useState(proj.priority||"Medium"),_city=useState(proj.city||""),_prov=useState(proj.province||""),_country=useState(proj.country||""),_cls=useState(proj.classification||"Domestic"),_tpl=useState(!proj.id),_saving=useState(false),_confirmDel=useState(false);
+  var mob=useMobile();var _n=useState(proj.name||""),_c=useState(proj.client||""),_m=useState(proj.manager||""),_d=useState(proj.description||""),_sd=useState(proj.startDate||new Date().toISOString().slice(0,10)),_ed=useState(proj.endDate||"2026-12-31"),_pp=useState(String((proj.planPct||0))),_st=useState(proj.status||"Active"),_pri=useState(proj.priority||"Medium"),_city=useState(proj.city||""),_prov=useState(proj.province||""),_country=useState(proj.country||""),_cls=useState(proj.classification||"Domestic"),_tpl=useState(!proj.id),_saving=useState(false),_confirmDel=useState(false);
   function save(){
     _saving[1](true);
-    var data={name:_n[0],client:_c[0],manager:_m[0],description:_d[0],startDate:_sd[0],endDate:_ed[0],plannedPct:parseFloat(_pp[0])||0,status:_st[0],priority:_pri[0],city:_city[0],province:_prov[0],country:_country[0],classification:_cls[0]};
+    var data={name:_n[0],client:_c[0],manager:_m[0],description:_d[0],startDate:_sd[0],endDate:_ed[0],status:_st[0],priority:_pri[0],city:_city[0],province:_prov[0],country:_country[0],classification:_cls[0]};
     var action=proj.id?"updateProject":"addProject";
     var promise=proj.id?apiPost(action,data,proj.id):apiPost(action,data);
     promise.then(function(res){
@@ -463,7 +462,7 @@ function ProjectModal(p){
       return res
     }).then(function(){p.onSaved();p.onClose()}).catch(function(){}).finally(function(){_saving[1](false)})
   }
-  function archiveProject(){if(!confirm("Archive this project?"))return;_saving[1](true);apiPost("updateProject",{status:"Archived"},proj.id).then(function(){p.onSaved();p.onClose()}).finally(function(){_saving[1](false)})}
+  function archiveProject(){if(!confirm("Archive this project?"))return;_saving[1](true);apiPost("updateProject",{status:"Archived"},proj.id).then(function(){p.onSaved();p.onClose();if(p.onBack)p.onBack()}).finally(function(){_saving[1](false)})}
   function deleteProject(){_saving[1](true);apiPost("deleteProject",null,proj.id).then(function(r){if(r.ok){p.onSaved();p.onClose()}}).finally(function(){_saving[1](false)})}
   return e(Modal,{show:true,onClose:p.onClose},
     e("h3",{style:{fontSize:18,fontWeight:700,marginBottom:20}},proj.id?"\u270F\uFE0F Edit Project":"\u2795 New Project"),
@@ -479,10 +478,9 @@ function ProjectModal(p){
       e("div",null,e("label",{className:"label"},"Manager"),e("input",{className:"input",value:_m[0],onChange:function(ev){_m[1](ev.target.value)}}))
     ),
     e("label",{className:"label"},"Description"),e("textarea",{className:"input",value:_d[0],onChange:function(ev){_d[1](ev.target.value)},rows:2,style:{marginBottom:12,resize:"vertical"}}),
-    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:12,marginBottom:16}},
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12,marginBottom:16}},
       e("div",null,e("label",{className:"label"},"Start Date"),e("input",{type:"date",className:"input",value:_sd[0],onChange:function(ev){_sd[1](ev.target.value)}})),
-      e("div",null,e("label",{className:"label"},"End Date"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}})),
-      e("div",null,e("label",{className:"label"},"Planned %"),e("input",{type:"number",className:"input",value:_pp[0],onChange:function(ev){_pp[1](ev.target.value)}}))
+      e("div",null,e("label",{className:"label"},"End Date"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}}))
     ),
     // Location: Country → Province → City (API-driven cascade)
     e(LocationCascade,{country:_country[0],province:_prov[0],city:_city[0],countryCode:proj.countryCode||"",stateCode:proj.stateCode||"",mob:mob,
@@ -544,7 +542,7 @@ function WeatherPill(){
 
 function ProjectList(p){
   var projects=p.projects,admin=p.admin,loading=p.loading;
-  var _showAdd=useState(false);var mob=useMobile();
+  var _showAdd=useState(false);var mob=useMobile();var _picExp=useState({});
   if(loading)return e(Spinner);
 
   // ── Aggregate metrics ──
@@ -553,7 +551,7 @@ function ProjectList(p){
   var totPlan=0,totActual=0,totMile=0,doneMile=0,totSubs=0,dnSubs=0,totBudget=0,totReal=0;
   var rH=0,rM=0,rL=0,iOpen=0,iPend=0,iClose=0;var allMile=[];
   projects.forEach(function(pr){
-    totPlan+=Number(pr.plannedPct)||0;totActual+=Number(pr.actualPct)||0;
+    totPlan+=(pr.planPct||0);totActual+=Number(pr.actualPct)||0;
     totMile+=Number(pr.totalTasks)||0;doneMile+=Number(pr.completedTasks)||0;
     totSubs+=Number(pr.totalSubs)||0;dnSubs+=Number(pr.doneSubs)||0;
     totBudget+=Number(pr.budgetPlan)||0;totReal+=Number(pr.budgetReal)||0;
@@ -626,9 +624,9 @@ function ProjectList(p){
         e("div",{style:{overflowX:"auto",maxHeight:400,overflowY:"auto"}},
           e("table",null,
             e("thead",null,e("tr",null,
-              ["Project","Location","Progress","Plan","Actual","Var","Risk","Budget","Status"].map(function(h){return e("th",{key:h,style:{position:"sticky",top:0,background:"#F5F6FA",zIndex:1}},h)}))),
+              ["Project","Location","Progress","Var","Risk","Budget","Status"].map(function(h){return e("th",{key:h,style:{position:"sticky",top:0,background:"#F5F6FA",zIndex:1}},h)}))),
           e("tbody",null,nonArch.map(function(pr){
-            var pp2=Number(pr.plannedPct)||0,ap2=Number(pr.actualPct)||0,v2=Math.round((ap2-pp2)*10)/10;
+            var pp2=(pr.planPct||0),ap2=Number(pr.actualPct)||0,v2=Math.round((ap2-pp2)*10)/10;
             var ragC=v2>=0?"#45B369":v2>=-10?"#FF9F29":"#EF4A00";
             // Status color mapping
             var stDotMap={Active:"#45B369","Not Yet Started":"#D1D5DB","On-Hold":"#FF9F29",Completed:"#487FFF",Archived:"#9CA3AF",Cancel:"#EF4A00"};
@@ -638,9 +636,16 @@ function ProjectList(p){
               onMouseEnter:function(ev){ev.currentTarget.style.background="#F5F6FA"},onMouseLeave:function(ev){ev.currentTarget.style.background="transparent"}},
               e("td",{style:{padding:"10px"}},e("div",{style:{fontWeight:600,fontSize:13}},pr.name),e("div",{style:{fontSize:10,color:"#9CA3AF"}},pr.manager||"")),
               e("td",{style:{padding:"10px"}},(pr.city||pr.country)?e("div",null,e("div",{style:{fontSize:11,color:"#4B5563"}},pr.city||""),e("div",{style:{fontSize:9,color:"#9CA3AF"}},pr.country||""),pr.classification&&e("span",{style:{fontSize:8,fontWeight:600,padding:"1px 4px",borderRadius:3,background:pr.classification==="Overseas"?"rgba(72,127,255,.1)":"rgba(69,179,105,.1)",color:pr.classification==="Overseas"?"#487FFF":"#45B369",marginTop:2,display:"inline-block"}},pr.classification)):e("span",{style:{color:"#D1D5DB",fontSize:10}},"\u2014")),
-              e("td",{style:{padding:"10px"}},e(Donut,{value:ap2,size:44,stroke:3.5,color:ragC,fontSize:10})),
-              e("td",{style:{padding:"10px",fontFamily:mono,fontWeight:600,color:"#487FFF",fontSize:13}},pp2+"%"),
-              e("td",{style:{padding:"10px",fontFamily:mono,fontWeight:600,color:ragC,fontSize:13}},ap2+"%"),
+              // Combined Progress column with plan + actual bars
+              e("td",{style:{padding:"10px",minWidth:180}},
+                e("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:4}},
+                  e("span",{style:{fontSize:9,fontWeight:600,color:"#487FFF",width:36}},"Plan"),
+                  e("div",{style:{flex:1,height:6,background:"#EBECEF",borderRadius:3,overflow:"hidden"}},e("div",{style:{height:"100%",width:Math.min(pp2,100)+"%",background:"#487FFF",borderRadius:3,transition:"width .5s"}})),
+                  e("span",{style:{fontSize:10,fontWeight:700,fontFamily:mono,color:"#487FFF",width:38,textAlign:"right"}},pp2+"%")),
+                e("div",{style:{display:"flex",alignItems:"center",gap:6}},
+                  e("span",{style:{fontSize:9,fontWeight:600,color:ragC,width:36}},"Actual"),
+                  e("div",{style:{flex:1,height:6,background:"#EBECEF",borderRadius:3,overflow:"hidden"}},e("div",{style:{height:"100%",width:Math.min(ap2,100)+"%",background:ragC,borderRadius:3,transition:"width .5s"}})),
+                  e("span",{style:{fontSize:10,fontWeight:700,fontFamily:mono,color:ragC,width:38,textAlign:"right"}},ap2+"%"))),
               e("td",{style:{padding:"10px"}},e("span",{style:{fontFamily:mono,fontWeight:700,fontSize:11,padding:"3px 8px",borderRadius:4,background:v2>=0?"rgba(69,179,105,.15)":v2>=-10?"rgba(255,159,41,.1)":"rgba(239,74,0,.1)",color:ragC}},(v2>=0?"+":"")+v2+"%")),
               // Risk column
               e("td",{style:{padding:"10px"}},pr.riskTotal>0?e("div",{style:{display:"flex",gap:3}},
@@ -820,6 +825,45 @@ function ProjectList(p){
       )
     ),
 
+    // ═══ 4b2. TASKS BY PIC ═══
+    (function(){
+      var pics=p.tasksByPIC||[];
+      if(!pics.length)return null;
+      return e("div",{className:"card",style:{padding:"18px 24px",marginBottom:16}},
+        e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+          e("div",{style:{fontSize:15,fontWeight:600,color:"#1F2937"}},"\uD83D\uDC65 Tasks by Personnel"),
+          e("span",{style:{fontSize:11,color:"#9CA3AF"}},pics.length+" people")),
+        pics.map(function(pic){
+          var isOpen=_picExp[0][pic.name];
+          var pctDone=pic.total>0?Math.round(pic.done/pic.total*100):0;
+          return e("div",{key:pic.name,style:{marginBottom:4,border:"1px solid #F3F4F6",borderRadius:8,overflow:"hidden"}},
+            e("div",{style:{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",cursor:"pointer",background:isOpen?"#F5F6FA":"#fff"},onClick:function(){var o={};o[pic.name]=!isOpen;_picExp[1](Object.assign({},_picExp[0],o))}},
+              e("div",{style:{fontSize:12,color:"#9CA3AF",transition:"transform .2s",transform:isOpen?"rotate(90deg)":""}},"\u25B6"),
+              e(Avatar,{name:pic.name,size:28,fontSize:10}),
+              e("div",{style:{flex:1,minWidth:0}},
+                e("div",{style:{fontSize:12,fontWeight:600}},pic.name),
+                pic.department&&e("div",{style:{fontSize:10,color:"#9CA3AF"}},pic.department)),
+              e("div",{style:{display:"flex",gap:4,flexShrink:0}},
+                pic.inProgress>0&&e("span",{style:{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(255,159,41,.1)",color:"#FF9F29"}},pic.inProgress+" IP"),
+                pic.notStarted>0&&e("span",{style:{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#F3F4F6",color:"#9CA3AF"}},pic.notStarted+" NS"),
+                pic.done>0&&e("span",{style:{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(69,179,105,.15)",color:"#45B369"}},pic.done+" \u2713")),
+              e("div",{style:{width:50,textAlign:"right"}},
+                e("div",{style:{fontSize:14,fontWeight:700,fontFamily:mono,color:pctDone===100?"#45B369":"#487FFF"}},pctDone+"%"),
+                e("div",{style:{fontSize:8,color:"#9CA3AF"}},pic.done+"/"+pic.total))),
+            isOpen&&e("div",{style:{padding:"0 14px 10px",background:"#FAFBFC"}},
+              pic.tasks.map(function(tk){
+                var stC=tk.status==="Done"?"#45B369":tk.status==="In Progress"?"#FF9F29":"#9CA3AF";
+                return e("div",{key:tk.id,style:{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #F3F4F6",cursor:"pointer",fontSize:11},onClick:function(){p.onSelect(tk.projectId)}},
+                  e("div",{style:{width:6,height:6,borderRadius:"50%",background:stC,flexShrink:0}}),
+                  e("div",{style:{flex:1,minWidth:0}},
+                    e("span",{style:{fontWeight:600,color:"#1F2937"}},tk.name),
+                    e("span",{style:{color:"#9CA3AF",marginLeft:6}},tk.projectName)),
+                  tk.milestone&&e("span",{style:{fontSize:9,color:"#8B5CF6",flexShrink:0}},"\uD83C\uDFC1 "+tk.milestone),
+                  e(Badge,{bg:tk.status==="Done"?"rgba(69,179,105,.15)":tk.status==="In Progress"?"rgba(255,159,41,.1)":"#F3F4F6",color:stC},tk.status))
+              })))
+        }))
+    })(),
+
     // ═══ 4c. PROJECTS BY PRIORITY ═══
     (function(){
       var priOrd=["Critical","High","Medium","Low"];
@@ -841,7 +885,7 @@ function ProjectList(p){
           var cl2=priCol[pri]||priCol.Medium;
           return e("div",{key:pri,style:{marginBottom:8}},
             grp2.map(function(pr){
-              var v4=Math.round(((pr.actualPct||0)-(pr.plannedPct||0))*10)/10;
+              var v4=Math.round(((pr.actualPct||0)-(pr.planPct||0))*10)/10;
               return e("div",{key:pr.id,style:{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:"1px solid #F5F6FA",cursor:"pointer"},onClick:function(){p.onSelect(pr.id)}},
                 e("span",{style:{width:8,height:8,borderRadius:"50%",background:cl2.dot,flexShrink:0}}),
                 e("span",{style:{fontSize:12,fontWeight:600,flex:1}},pr.name),
@@ -878,7 +922,7 @@ function ProjectList(p){
               e("div",{style:{flex:1,height:1,background:"#EBECEF",marginLeft:6}})),
             e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(auto-fill,minmax(300px,1fr))",gap:12}},
               grp.map(function(proj,i){
-                var v3=Math.round(((proj.actualPct||0)-(proj.plannedPct||0))*10)/10;
+                var v3=Math.round(((proj.actualPct||0)-(proj.planPct||0))*10)/10;
                 return e("div",{key:proj.id,className:"project-card",onClick:function(){p.onSelect(proj.id)},style:{animation:"fadeIn .2s ease "+(i*.04)+"s both",padding:"16px 20px"}},
                   e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}},
                     e("div",{style:{flex:1,minWidth:0}},e("h3",{style:{fontSize:14,fontWeight:700,marginBottom:1}},proj.name),e("p",{style:{fontSize:11,color:"#9CA3AF"}},proj.client||"")),
@@ -906,12 +950,12 @@ function ProjectList(p){
                     e("div",{style:{flex:1}},
                       e("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:3}},
                         e("span",{style:{fontSize:9,fontWeight:600,color:"#487FFF",width:36}},"Plan"),
-                        e("div",{style:{flex:1}},e(ProgressBar,{value:proj.plannedPct||0,h:5,color:"#487FFF"})),
-                        e("span",{style:{fontSize:9,fontWeight:700,fontFamily:mono,color:"#487FFF",width:32,textAlign:"right"}},(proj.plannedPct||0)+"%")),
+                        e("div",{style:{flex:1}},e(ProgressBar,{value:(proj.planPct||0),h:5,color:"#487FFF"})),
+                        e("span",{style:{fontSize:9,fontWeight:700,fontFamily:mono,color:"#487FFF",width:32,textAlign:"right"}},((proj.planPct||0))+"%")),
                       e("div",{style:{display:"flex",alignItems:"center",gap:6}},
                         e("span",{style:{fontSize:9,fontWeight:600,color:"#FF9F29",width:36}},"Act"),
-                        e("div",{style:{flex:1}},e(ProgressBar,{value:proj.actualPct||0,h:5,color:(proj.actualPct||0)>=(proj.plannedPct||0)?"#45B369":"#FF9F29"})),
-                        e("span",{style:{fontSize:9,fontWeight:700,fontFamily:mono,color:(proj.actualPct||0)>=(proj.plannedPct||0)?"#45B369":"#FF9F29",width:32,textAlign:"right"}},(proj.actualPct||0)+"%"))),
+                        e("div",{style:{flex:1}},e(ProgressBar,{value:proj.actualPct||0,h:5,color:(proj.actualPct||0)>=((proj.planPct||0))?"#45B369":"#FF9F29"})),
+                        e("span",{style:{fontSize:9,fontWeight:700,fontFamily:mono,color:(proj.actualPct||0)>=((proj.planPct||0))?"#45B369":"#FF9F29",width:32,textAlign:"right"}},(proj.actualPct||0)+"%"))),
                     // Variance + risk badges
                     e("div",{style:{display:"flex",flexDirection:"column",gap:3,alignItems:"flex-end"}},
                       e("span",{style:{fontSize:9,fontWeight:700,fontFamily:mono,padding:"2px 6px",borderRadius:3,background:v3>=0?"rgba(69,179,105,.15)":"rgba(239,74,0,.1)",color:v3>=0?"#45B369":"#EF4A00"}},(v3>=0?"+":"")+v3+"%"),
@@ -939,9 +983,10 @@ function ProjectDetail(p){
   var _editProj=useState(false),_editTask=useState(null),_showAddTask=useState(false),_showAddMile=useState(false),_editMile=useState(null);
   var _editRisk=useState(null),_showAddRisk=useState(false);
   var _addTaskMile=useState(null);
+  var _users=useState([]);
 
   function load(){_loading[1](true);apiGet("getProject",{id:projectId}).then(function(d){if(d.ok)setData(d)}).finally(function(){_loading[1](false)})}
-  useEffect(function(){load()},[projectId]);
+  useEffect(function(){load();apiGet("getUsers").then(function(d){if(d.ok)_users[1]((d.users||[]).filter(function(u){return u.username!=="admin"}))})},[projectId]);
 
   if(_loading[0]||!data||!data.project)return e(Spinner);
 
@@ -951,7 +996,7 @@ function ProjectDetail(p){
   var overall=totalSubs>0?doneSubs/totalSubs*100:0;
   var completedTasks=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
   var rs=compRS(risks),rl=getRL(rs.pct);
-  var variance=pct(overall/100)-(Number(proj.plannedPct)||0);
+  var variance=(Number(proj.actualPct)||0)-(proj.planPct||0);
   var metrics={overall:overall,ct:completedTasks,tt:tasks.length,ds:doneSubs,ts:totalSubs,variance:variance};
 
   // ─── Actions ───
@@ -961,8 +1006,8 @@ function ProjectDetail(p){
   function editSubName(sid,nm){apiPost("updateSubtask",{name:nm},sid)}
   function editSub(s){_editSubModal[1](s)}
   function saveSubEdit(s){apiPost("updateSubtask",{name:s.name,startDate:s.startDate,endDate:s.endDate,done:s.done},s.id).then(function(){load();_editSubModal[1](null)})}
-  function saveTask(changes){var tid=_editTask[0].id;apiPost("updateTask",{name:changes.name,milestoneName:changes.milestone.name,milestoneDate:changes.milestone.date,weight:changes.weight,startDate:changes.startDate,endDate:changes.endDate,taskStatus:changes.taskStatus,startMonth:changes.startMonth},tid).then(function(){load();_editTask[1](null)})}
-  function addTask(t){apiPost("addTask",{projectId:projectId,name:t.name,milestoneName:t.milestone.name,milestoneDate:t.milestone.date,weight:t.weight,startMonth:t.startMonth||getCM(),sortOrder:tasks.length,startDate:t.startDate,endDate:t.endDate,taskStatus:t.taskStatus||"Not Started"}).then(function(){load();_showAddTask[1](false)})}
+  function saveTask(changes){var tid=_editTask[0].id;apiPost("updateTask",{name:changes.name,milestoneName:changes.milestone.name,milestoneDate:changes.milestone.date,weight:changes.weight,startDate:changes.startDate,endDate:changes.endDate,taskStatus:changes.taskStatus,startMonth:changes.startMonth,assignee:changes.assignee||"",department:changes.department||""},tid).then(function(){load();_editTask[1](null)})}
+  function addTask(t){apiPost("addTask",{projectId:projectId,name:t.name,milestoneName:t.milestone.name,milestoneDate:t.milestone.date,weight:t.weight,startMonth:t.startMonth||getCM(),sortOrder:tasks.length,startDate:t.startDate,endDate:t.endDate,taskStatus:t.taskStatus||"Not Started",assignee:t.assignee||"",department:t.department||""}).then(function(){load();_showAddTask[1](false)})}
   function addTaskUnderMilestone(mileName,mileDate){_addTaskMile[1]({name:mileName,date:mileDate||""})}
   function delTask(tid){if(confirm("Delete this task and all subtasks?"))apiPost("deleteTask",null,tid).then(load)}
   function reorderTasks(newOrder){apiPost("reorderTasks",newOrder).then(load)}
@@ -1004,45 +1049,48 @@ function ProjectDetail(p){
     tab==="_print"&&e(PrintAllView,{proj:proj,tasks:tasks,risks:risks,metrics:metrics,rl:rl,rs:rs,budgetItems:budgetItems,budgetReals:budgetReals,regItems:regItems,weeklyReps:weeklyReps}),
     tab==="Overview"&&e(ProjOverview,{proj:proj,tasks:tasks,risks:risks,metrics:metrics,rl:rl,rs:rs,setTab:_tab[1],budgetItems:budgetItems,budgetReals:budgetReals,regItems:regItems,resources:resources}),
     tab==="Gantt Chart"&&e(ProjGantt,{tasks:tasks}),
-    tab==="S-Curve"&&e(ProjSCurve,{tasks:tasks,metrics:metrics}),
+    tab==="S-Curve"&&e(ProjSCurve,{tasks:tasks,metrics:metrics,proj:proj}),
     tab==="Tasks & Milestones"&&e(ProjTasksMilestones,{tasks:tasks,admin:admin,delTask:delTask,setEditTask:_editTask[1],setShowAddMile:function(){_showAddMile[1](true)},setEditMile:function(t){_editMile[1](t)},addTaskUnderMilestone:addTaskUnderMilestone,projectId:projectId,reload:load}),
     tab==="Risk Monitor"&&e(ProjRisks,{risks:risks,tasks:tasks,riskHist:riskHist,admin:admin,rs:rs,rl:rl,updateRS:updateRS,delRisk:delRisk,snapshot:snapshot,setEditRisk:_editRisk[1],setShowAddRisk:_showAddRisk[1],projectId:projectId,reload:load}),
     tab==="Budget & Resources"&&e("div",null,e(ProjBudget,{budgetItems:budgetItems,budgetReals:budgetReals,tasks:tasks,projectId:projectId,admin:canEditBudget,reload:load}),e("div",{style:{marginTop:24}},e(ProjResources,{resources:resources,projectId:projectId,admin:admin,reload:load}))),
-    tab==="Issue Logs"&&e(ProjRegister,{items:regItems,tasks:tasks,projectId:projectId,admin:admin,reload:load}),
+    tab==="Issue Logs"&&e(ProjRegister,{items:regItems,tasks:tasks,projectId:projectId,admin:admin,reload:load,users:_users[0]}),
     tab==="Directory"&&e(DirectoryModule,{projectId:projectId,admin:admin}),
     tab==="Stakeholders"&&e(ProjStakeholders,{stakeholders:stakeholders,projectId:projectId,admin:admin,userRole:userRole,reload:load}),
     tab==="Reports"&&e(ProjReports,{reports:weeklyReps,projectId:projectId,admin:admin,reload:load}),
     tab==="Log"&&admin&&userRole==="admin"&&e(ProjLog,{projectId:projectId}),
 
     // Modals
-    _editProj[0]&&e(ProjectModal,{project:proj,onClose:function(){_editProj[1](false)},onSaved:load}),
-    _editTask[0]&&e(EditTaskModalInline,{task:_editTask[0],onClose:function(){_editTask[1](null)},onSave:saveTask}),
-    _showAddTask[0]&&e(AddTaskModalInline,{show:true,onClose:function(){_showAddTask[1](false)},onSave:addTask}),
+    _editProj[0]&&e(ProjectModal,{project:proj,onClose:function(){_editProj[1](false)},onSaved:load,onBack:onBack}),
+    _editTask[0]&&e(EditTaskModalInline,{task:_editTask[0],users:_users[0],onClose:function(){_editTask[1](null)},onSave:saveTask}),
+    _showAddTask[0]&&e(AddTaskModalInline,{show:true,users:_users[0],onClose:function(){_showAddTask[1](false)},onSave:addTask}),
     _editRisk[0]&&e(RiskModalInline,{risk:_editRisk[0],tasks:tasks,onClose:function(){_editRisk[1](null)},onSave:saveRisk}),
     _showAddRisk[0]&&e(RiskModalInline,{risk:{_isNew:true},tasks:tasks,onClose:function(){_showAddRisk[1](false)},onSave:saveRisk}),
     _editSubModal[0]&&e(SubtaskEditModal,{sub:_editSubModal[0],onClose:function(){_editSubModal[1](null)},onSave:saveSubEdit}),
     _showAddMile[0]&&e(MilestoneModal,{projectId:projectId,allTasks:tasks,onClose:function(){_showAddMile[1](false)},reload:load}),
     _editMile[0]&&e(MilestoneModal,{item:_editMile[0],projectId:projectId,allTasks:tasks,onClose:function(){_editMile[1](null)},reload:load}),
-    _addTaskMile[0]&&e(AddTaskUnderMileModal,{milestone:_addTaskMile[0],projectId:projectId,onClose:function(){_addTaskMile[1](null)},reload:load})
+    _addTaskMile[0]&&e(AddTaskUnderMileModal,{milestone:_addTaskMile[0],projectId:projectId,users:_users[0],onClose:function(){_addTaskMile[1](null)},reload:load})
   );
 }
 
 // ── Inline Edit Modals (simplified) ──
-function EditTaskModalInline(p){var t=p.task;
-  var _n=useState(t.name),_sd=useState(t.startDate||""),_ed=useState(t.endDate||""),_st=useState(t.taskStatus||"Not Started");
+function EditTaskModalInline(p){var t=p.task;var users=p.users||[];
+  var _n=useState(t.name),_sd=useState(t.startDate||""),_ed=useState(t.endDate||""),_st=useState(t.taskStatus||"Not Started"),_assignee=useState(t.assignee||""),_dept=useState(t.department||"");
   var mileName=t.milestone?t.milestone.name:"";
   return e(Modal,{show:true,onClose:p.onClose},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},"\u270F\uFE0F Edit Task"),
     mileName&&e("div",{style:{background:"rgba(72,127,255,.08)",padding:"8px 14px",borderRadius:8,marginBottom:12,fontSize:12}},
       e("span",{style:{fontWeight:700,color:"#487FFF"}},"Milestone: "),e("span",null,mileName)),
     e("label",{className:"label"},"Task Name"),e("input",{className:"input",value:_n[0],onChange:function(ev){_n[1](ev.target.value)},style:{marginBottom:12}}),
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}},
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"Start Date"),e("input",{type:"date",className:"input",value:_sd[0],onChange:function(ev){_sd[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"End Date"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},e("option",{value:"Not Started"},"Not Started"),e("option",{value:"In Progress"},"In Progress"),e("option",{value:"Done"},"Done")))),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}},
+      e("div",null,e("label",{className:"label"},"Assigned To"),e("select",{className:"select",value:_assignee[0],onChange:function(ev){_assignee[1](ev.target.value)}},e("option",{value:""},"-- None --"),users.map(function(u){return e("option",{key:u.id,value:u.name},u.name)}))),
+      e("div",null,e("label",{className:"label"},"Department"),e("input",{className:"input",value:_dept[0],onChange:function(ev){_dept[1](ev.target.value)},placeholder:"e.g. Legal, Finance"}))),
     e("div",{style:{display:"flex",gap:10}},
       e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
-      e("button",{className:"btn btn-primary",style:{flex:1},onClick:function(){p.onSave({name:_n[0],milestone:t.milestone,weight:t.weight||20,startDate:_sd[0],endDate:_ed[0],taskStatus:_st[0],startMonth:_sd[0]?new Date(_sd[0]+"T00:00:00").getMonth():0})}},"Save")))}function AddTaskModalInline(p){
+      e("button",{className:"btn btn-primary",style:{flex:1},onClick:function(){p.onSave({name:_n[0],milestone:t.milestone,weight:t.weight||20,startDate:_sd[0],endDate:_ed[0],taskStatus:_st[0],startMonth:_sd[0]?new Date(_sd[0]+"T00:00:00").getMonth():0,assignee:_assignee[0],department:_dept[0]})}},"Save")))}function AddTaskModalInline(p){
   var _n=useState(""),_mn=useState(""),_md=useState("2026-06-30"),_w=useState("20"),_sd=useState(new Date().toISOString().slice(0,10)),_ed=useState("2026-12-31"),_st=useState("Not Started"),_sm=useState(String(getCM()));
   return e(Modal,{show:p.show,onClose:p.onClose},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},"\u2795 Add Task"),
@@ -1151,7 +1199,7 @@ function HeatMap5x5(p){
 }
 function ProjOverview(p){var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics,rl=p.rl,rs=p.rs,bi=p.budgetItems||[],br=p.budgetReals||[],reg=p.regItems||[];var mob=useMobile();
   var _taskFilter=useState("All");
-  var plannedPct=Number(proj.plannedPct)||0,actualPct=pct(m.overall/100),variance=actualPct-plannedPct;
+  var plannedPct=(proj.planPct||0),actualPct=Number(proj.actualPct)||0,variance=actualPct-plannedPct;
   var totalBudget=bi.reduce(function(a,b){return a+(Number(b.total)||0)},0),totalReal=br.reduce(function(a,b){return a+(Number(b.total)||0)},0);
   var budgetUtil=totalBudget>0?Math.round(totalReal/totalBudget*100):0;
   var openIssues=reg.filter(function(r){return r.status==="Open"}).length,closedIssues=reg.filter(function(r){return r.status==="Closed"}).length,pendingIssues=reg.filter(function(r){return r.status==="Pending"||r.status==="Awaiting Approval"}).length;
@@ -1455,7 +1503,9 @@ function ProjTasksMilestones(p){
               e("div",{style:{display:"flex",gap:8,marginTop:2,flexWrap:"wrap",fontSize:10,color:"#9CA3AF"}},
                 e(Badge,{bg:isDone?"rgba(69,179,105,.15)":isIP?"rgba(255,159,41,.1)":"#F3F4F6",color:isDone?"#45B369":isIP?"#FF9F29":"#9CA3AF"},t.taskStatus||"Not Started"),
                 t.startDate&&e("span",null,fmtF(t.startDate)+" \u2192 "+fmtF(t.endDate)),
-                e("span",{style:{fontWeight:600}},taskWeight+"% weight"))),
+                e("span",{style:{fontWeight:600}},taskWeight+"% weight"),
+                t.assignee&&e("span",{style:{fontWeight:600,color:"#487FFF",background:"rgba(72,127,255,.08)",padding:"1px 6px",borderRadius:4}},"\uD83D\uDC64 "+t.assignee),
+                t.department&&e("span",{style:{color:"#8B5CF6"}},t.department))),
             // Actions
             admin&&e("div",{style:{display:"flex",gap:4,flexShrink:0}},
               e("button",{className:"edit-icon",style:{width:24,height:24,fontSize:10},onClick:function(){p.setEditTask(t)}},"\u270F"),
@@ -1490,7 +1540,7 @@ function ProjTasks(p){var tasks=p.tasks,admin=p.admin;
           admin&&e("div",{style:{padding:"0 8px 0 12px",color:"#D1D5DB",fontSize:16,cursor:"grab"}},"\u2630"),
           e("button",{className:"expand-btn",style:{flex:1},onClick:function(){p.exp[1](isO?null:t.id)}},
             e("div",{style:{width:40,height:40,borderRadius:10,background:pr===100?"rgba(69,179,105,.15)":pr>0?"rgba(255,159,41,.1)":"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}},pr===100?"\u2705":pr>0?"\uD83D\uDD04":"\uD83D\uDCCB"),
-            e("div",{style:{flex:1}},e("div",{style:{fontSize:14,fontWeight:600}},t.name),e("div",{style:{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}},e(Badge,{bg:(t.taskStatus||"Not Started")==="Done"?"rgba(69,179,105,.15)":(t.taskStatus||"Not Started")==="In Progress"?"rgba(255,159,41,.1)":"#F3F4F6",color:(t.taskStatus||"Not Started")==="Done"?"#45B369":(t.taskStatus||"Not Started")==="In Progress"?"#FF9F29":"#9CA3AF"},t.taskStatus||"Not Started"),e("span",{style:{fontSize:11,color:"#6B7280"}},(t.subtasks?t.subtasks.filter(function(s){return s.done}).length:0)+"/"+(t.subtasks?t.subtasks.length:0)+" subtasks"),t.startDate&&e("span",{style:{fontSize:11,color:"#9CA3AF"}},fmtF(t.startDate)+" \u2192 "+fmtF(t.endDate)),t.milestone&&e("span",{style:{fontSize:11,color:"#6B7280"}},"\uD83C\uDFC1 "+fmtF(t.milestone.date)))),
+            e("div",{style:{flex:1}},e("div",{style:{fontSize:14,fontWeight:600}},t.name),e("div",{style:{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}},e(Badge,{bg:(t.taskStatus||"Not Started")==="Done"?"rgba(69,179,105,.15)":(t.taskStatus||"Not Started")==="In Progress"?"rgba(255,159,41,.1)":"#F3F4F6",color:(t.taskStatus||"Not Started")==="Done"?"#45B369":(t.taskStatus||"Not Started")==="In Progress"?"#FF9F29":"#9CA3AF"},t.taskStatus||"Not Started"),e("span",{style:{fontSize:11,color:"#6B7280"}},(t.subtasks?t.subtasks.filter(function(s){return s.done}).length:0)+"/"+(t.subtasks?t.subtasks.length:0)+" subtasks"),t.startDate&&e("span",{style:{fontSize:11,color:"#9CA3AF"}},fmtF(t.startDate)+" \u2192 "+fmtF(t.endDate)),t.milestone&&e("span",{style:{fontSize:11,color:"#6B7280"}},"\uD83C\uDFC1 "+fmtF(t.milestone.date)),t.assignee&&e("span",{style:{fontSize:11,fontWeight:600,color:"#487FFF",background:"rgba(72,127,255,.08)",padding:"1px 6px",borderRadius:4}},"\uD83D\uDC64 "+t.assignee))),
             e("div",{style:{fontSize:20,fontWeight:700,fontFamily:mono,color:sc(t.taskStatus||t.status),flexShrink:0,marginRight:8}},pr+"%"),
             e("div",{style:{fontSize:16,color:"#9CA3AF",transition:"transform .2s",transform:isO?"rotate(180deg)":""}},"\u25BE")),
           admin&&e("div",{style:{display:"flex",gap:6,paddingRight:16}},e("button",{className:"edit-icon",onClick:function(ev){ev.stopPropagation();p.setEditTask(t)}},"\u270F"),e("button",{className:"del-icon",onClick:function(ev){ev.stopPropagation();p.delTask(t.id)}},"\u2715"))),
@@ -1531,11 +1581,11 @@ function SubtaskEditModal(p){
 }
 
 function AddTaskUnderMileModal(p){
-  var mile=p.milestone;
-  var _n=useState(""),_sd=useState(new Date().toISOString().slice(0,10)),_ed=useState("2026-12-31"),_st=useState("Not Started"),_saving=useState(false);
+  var mile=p.milestone;var users=p.users||[];
+  var _n=useState(""),_sd=useState(new Date().toISOString().slice(0,10)),_ed=useState("2026-12-31"),_st=useState("Not Started"),_assignee=useState(""),_dept=useState(""),_saving=useState(false);
   function save(){
     if(!_n[0].trim())return;_saving[1](true);
-    apiPost("addTask",{projectId:p.projectId,name:_n[0],milestoneName:mile.name,milestoneDate:mile.date,weight:20,startMonth:_sd[0]?new Date(_sd[0]+"T00:00:00").getMonth():0,sortOrder:99,startDate:_sd[0],endDate:_ed[0],taskStatus:_st[0]}).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})
+    apiPost("addTask",{projectId:p.projectId,name:_n[0],milestoneName:mile.name,milestoneDate:mile.date,weight:20,startMonth:_sd[0]?new Date(_sd[0]+"T00:00:00").getMonth():0,sortOrder:99,startDate:_sd[0],endDate:_ed[0],taskStatus:_st[0],assignee:_assignee[0],department:_dept[0]}).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})
   }
   return e(Modal,{show:true,onClose:p.onClose},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},"\u2795 Add Task"),
@@ -1547,6 +1597,9 @@ function AddTaskUnderMileModal(p){
       e("div",null,e("label",{className:"label"},"Start Date"),e("input",{type:"date",className:"input",value:_sd[0],onChange:function(ev){_sd[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"End Date"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},e("option",{value:"Not Started"},"Not Started"),e("option",{value:"In Progress"},"In Progress"),e("option",{value:"Done"},"Done")))),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Assigned To"),e("select",{className:"select",value:_assignee[0],onChange:function(ev){_assignee[1](ev.target.value)}},e("option",{value:""},"-- None --"),users.map(function(u){return e("option",{key:u.id,value:u.name},u.name)}))),
+      e("div",null,e("label",{className:"label"},"Department"),e("input",{className:"input",value:_dept[0],onChange:function(ev){_dept[1](ev.target.value)},placeholder:"e.g. Legal, Finance"}))),
     e("div",{style:{background:"#F5F6FA",padding:"8px 14px",borderRadius:8,marginBottom:16,fontSize:11,color:"#6B7280"}},
       "\uD83D\uDCA1 Weight is auto-calculated: each task gets equal share (e.g. 4 tasks = 25% each). Milestone completes when all tasks are Done."),
     e("div",{style:{display:"flex",gap:10}},
@@ -1611,7 +1664,7 @@ function ProjMilestones(p){var tasks=p.tasks,admin=p.admin,today=new Date();
   );
 }
 
-function ProjSCurve(p){var tasks=p.tasks,met=p.metrics;var _h=useState(null),hover=_h[0];
+function ProjSCurve(p){var tasks=p.tasks,met=p.metrics,proj=p.proj||{};var _h=useState(null),hover=_h[0];
   var cm=getCM(),W=760,H=380,pL=55,pR=30,pT=30,pB=50,cW=W-pL-pR,cH=H-pT-pB;
   function x(i){return pL+i/11*cW}function y(v){return pT+cH-v/100*cH}
 
@@ -1652,16 +1705,18 @@ function ProjSCurve(p){var tasks=p.tasks,met=p.metrics;var _h=useState(null),hov
 
     var status=(t.taskStatus||"").toLowerCase();
     if(status==="done"){
-      // Done: credit full weight compressed into start→min(actEnd, currentMonth)
-      var effectiveEnd=Math.min(actEnd,cm);
-      var dur=Math.max(effectiveEnd-sm+1,1);
+      // Done: full weight credited by current month, even if task starts later
+      var creditStart=Math.min(sm,cm);
+      var creditEnd=Math.min(actEnd,cm);
+      var dur=Math.max(creditEnd-creditStart+1,1);
       var perMonth=w/dur;
-      for(var m4=sm;m4<=effectiveEnd;m4++)monthlyActual[m4]+=perMonth;
+      for(var m4=creditStart;m4<=creditEnd;m4++)monthlyActual[m4]+=perMonth;
     } else if(status==="in progress"){
-      // In Progress: 50% weight from start to current month
-      var durIP=Math.max(cm-sm+1,1);
+      // In Progress: 50% weight from start (or earlier) to current month
+      var ipStart=Math.min(sm,cm);
+      var durIP=Math.max(cm-ipStart+1,1);
       var perMonthIP=w*0.5/durIP;
-      for(var m4b=sm;m4b<=cm;m4b++)monthlyActual[m4b]+=perMonthIP;
+      for(var m4b=ipStart;m4b<=cm;m4b++)monthlyActual[m4b]+=perMonthIP;
     }
     // Not Started: 0 contribution
   });
@@ -1673,10 +1728,13 @@ function ProjSCurve(p){var tasks=p.tasks,met=p.metrics;var _h=useState(null),hov
   }
 
   var pp=planned.map(function(v,i){return(i?"L":"M")+x(i).toFixed(1)+","+y(v).toFixed(1)}).join(" ");
+  // Variance at current month — use backend values for consistency with dashboard
+  var planNow=proj.planPct||planned[cm]||0,actNow=Number(proj.actualPct)||actual[cm]||0;
+  // Override actual curve endpoint at current month to match dashboard
+  if(actual[cm]!==null)actual[cm]=actNow;
+  var variance2=Math.round((actNow-planNow)*10)/10;
   var ap2=[];actual.forEach(function(v,i){if(v!==null)ap2.push({i:i,v:v})});
   var aP=ap2.map(function(p2,i){return(i?"L":"M")+x(p2.i).toFixed(1)+","+y(p2.v).toFixed(1)}).join(" ");
-  // Variance at current month
-  var planNow=planned[cm]||0,actNow=actual[cm]||0,variance2=Math.round((actNow-planNow)*10)/10;
   function mm(ev){var r=ev.currentTarget.getBoundingClientRect();var idx=Math.round(((ev.clientX-r.left)/r.width*W-pL)/cW*11);_h[1](Math.max(0,Math.min(11,idx)))}
   return e("div",{style:{animation:"fadeIn .3s"}},e("h2",{style:{fontSize:20,fontWeight:700,marginBottom:4}},"S-Curve"),e("p",{style:{fontSize:13,color:"#6B7280",marginBottom:20}},"Planned vs Actual cumulative progress based on task weights and schedules."),
     // Legend + Summary
@@ -2141,12 +2199,12 @@ function ProjBudget(p){
 function RegisterModal(p){
   var item=p.item||{};var isEdit=!!item.id;var tasks=p.tasks||[];
   var milestones=(function(){var seen={},out=[];tasks.forEach(function(t){var nm=t.milestone?t.milestone.name:t.name;var dt=t.milestone?t.milestone.date:"";if(!seen[nm]){seen[nm]=true;out.push({name:nm,date:dt})}});return out})();
-  var _type=useState(item.type||"Issue"),_title=useState(item.title||""),_desc=useState(item.description||""),_ap=useState(item.actionPlan||""),_status=useState(item.status||"Open"),_sd=useState(item.startDate||new Date().toISOString().slice(0,10)),_ed=useState(item.endDate||""),_collab=useState(item.collaborator||""),_mgmt=useState(item.managementAction||""),_mile=useState(item.linkedMilestone||""),_saving=useState(false),_err=useState("");
+  var _type=useState(item.type||"Issue"),_title=useState(item.title||""),_desc=useState(item.description||""),_ap=useState(item.actionPlan||""),_status=useState(item.status||"Open"),_sd=useState(item.startDate||new Date().toISOString().slice(0,10)),_ed=useState(item.endDate||""),_collab=useState(item.collaborator||""),_mgmt=useState(item.managementAction||""),_mile=useState(item.linkedMilestone||""),_escalate=useState(item.escalateTo||""),_issueDept=useState(item.department||""),_saving=useState(false),_err=useState("");
   // Calculate days open
   var daysOpen=null;
   if(_sd[0]&&_status[0]!=="Closed"){try{var m2=String(_sd[0]).match(/^\d{4}-\d{2}-\d{2}/);if(m2){var start=new Date(_sd[0]+"T00:00:00"),now=new Date();var d2=Math.ceil((now-start)/(864e5));if(!isNaN(d2))daysOpen=Math.max(0,d2)}}catch(x){}}
   function save(){if(!_title[0].trim()){_err[1]("Title is required");return}_saving[1](true);
-    var data={projectId:p.projectId,type:_type[0],title:_title[0],description:_desc[0],actionPlan:_ap[0],status:_status[0],startDate:_sd[0],endDate:_ed[0],collaborator:_collab[0],managementAction:_mgmt[0],linkedMilestone:_mile[0]};
+    var data={projectId:p.projectId,type:_type[0],title:_title[0],description:_desc[0],actionPlan:_ap[0],status:_status[0],startDate:_sd[0],endDate:_ed[0],collaborator:_collab[0],managementAction:_mgmt[0],linkedMilestone:_mile[0],escalateTo:_escalate[0],department:_issueDept[0]};
     (isEdit?apiPost("updateRegisterItem",data,item.id):apiPost("addRegisterItem",data)).then(function(d){if(d.ok){p.reload();p.onClose()}else _err[1](d.error||"Failed")}).finally(function(){_saving[1](false)})}
   return e(Modal,{show:true,onClose:p.onClose,style:{maxWidth:620}},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},isEdit?"\u270F\uFE0F Edit Issue Log":"\u2795 Create Issue Log"),
@@ -2175,6 +2233,9 @@ function RegisterModal(p){
       e("div",{style:{flex:1}},e("label",{className:"label"},"Start Date"),e("input",{type:"date",className:"input",value:_sd[0],onChange:function(ev){_sd[1](ev.target.value)}})),
       e("div",{style:{flex:1}},e("label",{className:"label"},"End Date"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}}))
     ),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"Escalate To"),e("select",{className:"select",value:_escalate[0],onChange:function(ev){_escalate[1](ev.target.value)}},e("option",{value:""},"-- None --"),(p.users||[]).map(function(u){return e("option",{key:u.id,value:u.name},u.name)}))),
+      e("div",null,e("label",{className:"label"},"Department"),e("input",{className:"input",value:_issueDept[0],onChange:function(ev){_issueDept[1](ev.target.value)},placeholder:"e.g. Legal, Finance"}))),
     e("label",{className:"label"},"Collaborator"),e("input",{className:"input",value:_collab[0],onChange:function(ev){_collab[1](ev.target.value)},placeholder:"Names of people involved",style:{marginBottom:12}}),
     e("label",{className:"label"},"Management Action"),e("textarea",{className:"input",value:_mgmt[0],onChange:function(ev){_mgmt[1](ev.target.value)},rows:2,style:{marginBottom:16,resize:"vertical"}}),
     e("div",{style:{display:"flex",gap:10}},e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),e("button",{className:"btn btn-primary",style:{flex:1},onClick:save,disabled:_saving[0]},_saving[0]?"Saving...":"Save"))
@@ -2218,8 +2279,8 @@ function ProjRegister(p){
           r.collaborator&&e("span",null,"\uD83D\uDC64 "+r.collaborator),
           r.managementAction&&e("span",null,"\uD83D\uDCE2 "+r.managementAction.substring(0,80)))
       )}),
-    _show[0]&&e(RegisterModal,{item:null,tasks:tasks,projectId:projectId,reload:reload,onClose:function(){_show[1](false)}}),
-    _edit[0]&&e(RegisterModal,{item:_edit[0],tasks:tasks,projectId:projectId,reload:reload,onClose:function(){_edit[1](null)}})
+    _show[0]&&e(RegisterModal,{item:null,tasks:tasks,users:p.users,projectId:projectId,reload:reload,onClose:function(){_show[1](false)}}),
+    _edit[0]&&e(RegisterModal,{item:_edit[0],tasks:tasks,users:p.users,projectId:projectId,reload:reload,onClose:function(){_edit[1](null)}})
   );
 }
 
@@ -2387,7 +2448,7 @@ function ProjReports(p){
 // ══════════════════════════════════════════
 function PrintAllView(p){
   var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics,bi=p.budgetItems||[],br=p.budgetReals||[],reg=p.regItems||[],wr=p.weeklyReps||[];
-  var actualPct=pct(m.overall/100),plannedPct=Number(proj.plannedPct)||0;
+  var actualPct=Number(proj.actualPct)||0,plannedPct=(proj.planPct||0);
   var totalBudget=bi.reduce(function(a,b){return a+(Number(b.total)||0)},0),totalReal=br.reduce(function(a,b){return a+(Number(b.total)||0)},0);
   function fmtIDR(n){return"IDR "+Number(n).toLocaleString("id-ID")}
   var sortedTasks=tasks.slice().sort(function(a,b){var o={"In Progress":0,"In progress":0,"Not Started":1,"Not started":1,"Done":2};return(o[a.status]||1)-(o[b.status]||1)});
@@ -2708,24 +2769,33 @@ function UserManagement(p){
 
 function UserModal(p){
   var u=p.user||{};var isEdit=!!u.id;
-  var _name=useState(u.name||""),_username=useState(u.username||""),_pass=useState(""),_role=useState(u.role||"project_owner"),_email=useState(u.email||""),_assigned=useState(u.assignedProjects||""),_position=useState(u.position||""),_saving=useState(false),_err=useState("");
+  var allModules=["projects","workspace","operations","crm","analytics"];
+  var defaultMods=u.allowedModules?u.allowedModules.split(",").map(function(s){return s.trim()}).filter(Boolean):allModules.slice();
+  var _name=useState(u.name||""),_username=useState(u.username||""),_pass=useState(""),_role=useState(u.role||"project_owner"),_email=useState(u.email||""),_assigned=useState(u.assignedProjects||""),_position=useState(u.position||""),_mods=useState(defaultMods),_saving=useState(false),_err=useState("");
+  var _projects=useState([]),_selPids=useState((u.assignedProjects||"").split(",").map(function(s){return s.trim()}).filter(Boolean));
+  useEffect(function(){apiGet("getProjects").then(function(d){if(d.ok)_projects[1](d.projects||[])})},[]);
+  function toggleMod(m){var cur=_mods[0].slice();var i=cur.indexOf(m);if(i>=0)cur.splice(i,1);else cur.push(m);_mods[1](cur)}
+  function togglePid(name){var cur=_selPids[0].slice();var i=cur.indexOf(name);if(i>=0)cur.splice(i,1);else cur.push(name);_selPids[1](cur)}
   function save(){
     if(!_username[0].trim()){_err[1]("Username is required");return}
     if(!isEdit&&!_pass[0].trim()){_err[1]("Password is required");return}
     _saving[1](true);_err[1]("");
-    var data={name:_name[0],username:_username[0],role:_role[0],email:_email[0],assignedProjects:_assigned[0],position:_position[0]};
+    var data={name:_name[0],username:_username[0],role:_role[0],email:_email[0],position:_position[0],allowedModules:_role[0]==="admin"?allModules.join(","):_mods[0].join(",")};
+    if(_role[0]==="external")data.assignedProjects=_selPids[0].join(",");
+    else if(_role[0]==="project_owner")data.assignedProjects=_assigned[0];
+    else data.assignedProjects="";
     if(_pass[0])data.password=_pass[0];
     (isEdit?apiPost("updateUser",data,u.id):apiPost("addUser",data)).then(function(d){
       if(d.ok){p.onSaved();p.onClose()}else _err[1](d.error||"Failed")
     }).finally(function(){_saving[1](false)})}
-  var showAssigned=_role[0]==="external"||_role[0]==="project_owner";
-  return e(Modal,{show:true,onClose:p.onClose},
+  var modLabels={projects:"\uD83D\uDCCA Projects",workspace:"\uD83D\uDCBB Workspace",operations:"\uD83C\uDFE2 Operations",crm:"\uD83E\uDD1D CRM",analytics:"\uD83D\uDCC8 Analytics"};
+  return e(Modal,{show:true,onClose:p.onClose,style:{maxWidth:600}},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},isEdit?"\u270F\uFE0F Edit User":"\u2795 Add User"),
     _err[0]&&e("div",{style:{background:"rgba(239,74,0,.1)",color:"#EF4A00",padding:"8px 12px",borderRadius:8,fontSize:12,marginBottom:12}},_err[0]),
     e("label",{className:"label"},"Full Name"),
     e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value)},placeholder:"e.g. Jemy Mustany",style:{marginBottom:12}}),
     e("label",{className:"label"},"Role / Position"),
-    e("input",{className:"input",value:_position[0],onChange:function(ev){_position[1](ev.target.value)},placeholder:"e.g. Project Manager, VP Operations, Board Director",style:{marginBottom:12}}),
+    e("input",{className:"input",value:_position[0],onChange:function(ev){_position[1](ev.target.value)},placeholder:"e.g. Project Manager, VP Operations",style:{marginBottom:12}}),
     e("div",{style:{display:"flex",gap:12,marginBottom:12}},
       e("div",{style:{flex:1}},e("label",{className:"label"},"Username *"),e("input",{className:"input",value:_username[0],onChange:function(ev){_username[1](ev.target.value)},placeholder:"e.g. jemy",disabled:isEdit})),
       e("div",{style:{flex:1}},e("label",{className:"label"},isEdit?"New Password (leave blank to keep)":"Password *"),e("input",{className:"input",type:"password",value:_pass[0],onChange:function(ev){_pass[1](ev.target.value)}}))
@@ -2737,22 +2807,37 @@ function UserModal(p){
         e("option",{value:"pmo"},"PMO Officer \u2014 Monitor all, reporting & budget"),
         e("option",{value:"project_owner"},"Project Owner \u2014 Own projects only"),
         e("option",{value:"bod"},"BOD \u2014 Read-only dashboard"),
-        e("option",{value:"external"},"External \u2014 Specific projects only"))),
+        e("option",{value:"external"},"External / Guest \u2014 Specific projects only"))),
       e("div",{style:{flex:1}},e("label",{className:"label"},"Email"),e("input",{className:"input",type:"email",value:_email[0],onChange:function(ev){_email[1](ev.target.value)},placeholder:"email@company.com"}))
     ),
-    // Assigned projects (for project_owner and external)
-    showAssigned&&e("div",{style:{marginBottom:12}},
-      e("label",{className:"label"},_role[0]==="external"?"Assigned Projects (project names, comma-separated)":"Manager Name (must match project's Manager field)"),
-      e("input",{className:"input",value:_assigned[0],onChange:function(ev){_assigned[1](ev.target.value)},placeholder:_role[0]==="external"?"e.g. Philippines Branch Office, TIC/IFIA":"Name as shown in project Manager field"}),
-      e("div",{style:{fontSize:10,color:"#9CA3AF",marginTop:4}},_role[0]==="external"?"User will only see listed projects. Use exact project names.":"Project Owner sees projects where Manager matches their Full Name above.")),
+    // Module access checkboxes (Fix 7 & 9)
+    _role[0]!=="admin"&&e("div",{style:{background:"#F5F6FA",borderRadius:8,padding:"12px 16px",marginBottom:12}},
+      e("div",{style:{fontSize:11,fontWeight:700,color:"#6B7280",marginBottom:8}},"MODULE ACCESS"),
+      e("div",{style:{display:"flex",gap:12,flexWrap:"wrap"}},
+        allModules.map(function(m){return e("label",{key:m,style:{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:12,padding:"4px 10px",borderRadius:6,background:_mods[0].indexOf(m)>=0?"rgba(72,127,255,.1)":"#fff",border:"1px solid "+(_mods[0].indexOf(m)>=0?"#487FFF":"#E5E7EB")}},
+          e("input",{type:"checkbox",checked:_mods[0].indexOf(m)>=0,onChange:function(){toggleMod(m)},style:{accentColor:"#487FFF"}}),
+          modLabels[m]||m)}))),
+    // Project Owner — manager field
+    _role[0]==="project_owner"&&e("div",{style:{marginBottom:12}},
+      e("label",{className:"label"},"Manager Name (must match project\u2019s Manager field)"),
+      e("input",{className:"input",value:_assigned[0],onChange:function(ev){_assigned[1](ev.target.value)},placeholder:"Name as shown in project Manager field"}),
+      e("div",{style:{fontSize:10,color:"#9CA3AF",marginTop:4}},"Project Owner sees projects where Manager matches their Full Name above.")),
+    // External/Guest — project checkboxes (Fix 8 & 9)
+    _role[0]==="external"&&e("div",{style:{background:"#F5F6FA",borderRadius:8,padding:"12px 16px",marginBottom:12}},
+      e("div",{style:{fontSize:11,fontWeight:700,color:"#6B7280",marginBottom:8}},"PROJECT ACCESS"),
+      _projects[0].length===0?e("div",{style:{fontSize:11,color:"#9CA3AF"}},"Loading projects..."):
+      e("div",{style:{maxHeight:200,overflowY:"auto"}},
+        _projects[0].map(function(pr){return e("label",{key:pr.id,style:{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #EBECEF",cursor:"pointer",fontSize:12}},
+          e("input",{type:"checkbox",checked:_selPids[0].indexOf(pr.name)>=0,onChange:function(){togglePid(pr.name)},style:{accentColor:"#487FFF"}}),
+          e("div",{style:{flex:1}},e("span",{style:{fontWeight:500}},pr.name),e("span",{style:{fontSize:10,color:"#9CA3AF",marginLeft:6}},pr.status||"")))}))),
     // Role description
     e("div",{style:{background:"#F5F6FA",borderRadius:8,padding:"10px 12px",marginBottom:16,fontSize:11,color:"#6B7280"}},
       _role[0]==="admin"?"\uD83D\uDD13 Full access: create/edit/delete everything, manage users, edit budgets":
       _role[0]==="project_admin"?"\u2699 Edit all projects, tasks, risks, resources. Cannot manage users or edit budgets":
       _role[0]==="pmo"?"\uD83D\uDCCB View all projects. Can edit tasks, risks, issues, budget plan & realization, reports":
       _role[0]==="project_owner"?"\uD83D\uDC64 Can see and edit assigned projects including budget plan & realization":
-      _role[0]==="bod"?"\uD83D\uDCCA Read-only access to PMO dashboard and all project details. For board-level monitoring":
-      _role[0]==="external"?"\uD83D\uDD12 Read-only access to specific assigned projects only. Admin controls which projects are visible":
+      _role[0]==="bod"?"\uD83D\uDCCA Read-only access to PMO dashboard and all project details":
+      _role[0]==="external"?"\uD83D\uDD12 Read-only access to selected projects only":
       "Select a role"),
     e("div",{style:{display:"flex",gap:10}},
       e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
@@ -3489,14 +3574,17 @@ function ProfileModal(p){
 function App(){
   // Session persistence via sessionStorage (survives refresh, clears on tab close)
   var savedSession=null;try{savedSession=JSON.parse(sessionStorage.getItem("scci_session"))}catch(x){}
+  if(savedSession)window._userCtx={role:savedSession.role||"",name:savedSession.name||""};
   var _connected=useState(!!getApiUrl()),connected=_connected[0];
   var _allProjects=useState([]);
+  var _tasksByPIC=useState([]);
   var _loading=useState(false);
   var _admin=useState(savedSession?true:false),admin=_admin[0];
   var _userRole=useState(savedSession?savedSession.role:""),userRole=_userRole[0];
   var _userName=useState(savedSession?savedSession.name:""),userName=_userName[0];
   var _userPhoto=useState(savedSession?savedSession.photo:""),userPhoto=_userPhoto[0];
   var _assignedPids=useState(savedSession?savedSession.ap:""),assignedPids=_assignedPids[0];
+  var _userMods=useState(savedSession&&savedSession.mods?savedSession.mods.split(","):["projects","workspace","operations","crm","analytics"]),userMods=_userMods[0];
   var _showUsers=useState(false);
   var _sidebarOpen=useState(false);
   var _notifications=useState([]);
@@ -3524,7 +3612,7 @@ function App(){
   var canCreateProject=userRole==="admin"||userRole==="project_admin"||userRole==="pmo"||userRole==="project_owner";
   var canEditProject=userRole==="admin"||userRole==="project_admin"||userRole==="project_owner"||userRole==="pmo";
 
-  function loadProjects(){_loading[1](true);apiGet("getProjects").then(function(d){if(d.ok)_allProjects[1](d.projects||[])}).catch(function(){}).finally(function(){_loading[1](false)})}
+  function loadProjects(){_loading[1](true);apiGet("getProjects").then(function(d){if(d.ok){_allProjects[1](d.projects||[]);_tasksByPIC[1](d.tasksByPIC||[])}}).catch(function(){}).finally(function(){_loading[1](false)})}
   function loadNotifications(){apiGet("getNotifications",{role:userRole,user:userName}).then(function(d){if(d.ok){
     var items=d.notifications||[];
     // Filter out notifications cleared by user
@@ -3538,9 +3626,11 @@ function App(){
 
   // Login required for all users
   if(!admin)return e("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F5F6FA"}},
-    e(LoginModal,{show:true,onClose:function(){},onLogin:function(role,name,ap,photo){
+    e(LoginModal,{show:true,onClose:function(){},onLogin:function(role,name,ap,photo,mods){
       _admin[1](true);_userRole[1](role||"bod");_userName[1](name||"User");_userPhoto[1](photo||"");_assignedPids[1](ap||"");
-      try{sessionStorage.setItem("scci_session",JSON.stringify({role:role||"bod",name:name||"User",ap:ap||"",photo:photo||""}))}catch(x){}
+      var modList=(mods||"projects,workspace,operations,crm,analytics").split(",");_userMods[1](modList);
+      window._userCtx={role:role||"bod",name:name||"User"};
+      try{sessionStorage.setItem("scci_session",JSON.stringify({role:role||"bod",name:name||"User",ap:ap||"",photo:photo||"",mods:mods||""}))}catch(x){}
     }}));
 
   var now=new Date();
@@ -3557,18 +3647,18 @@ function App(){
         // ── Dashboard (expandable) ──
         e("li",{className:"sidebar-divider"},"Dashboard"),
         e("li",{className:"sidebar-item"+(page==="mgmt"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("mgmt");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83C\uDFE0"," Management Dashboard")),
-        !isGuest&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_dashExpand[1](!_dashExpand[0])},style:{fontWeight:600}},"\uD83D\uDCCA"," Projects ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_dashExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
-        !isGuest&&_dashExpand[0]&&e("li",{className:"sidebar-item"+(page==="overseas"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("overseas");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDF0F"," Overseas Project")),
-        !isGuest&&_dashExpand[0]&&e("li",{className:"sidebar-item"+(page==="domestic"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("domestic");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDFE2"," Domestic Project")),
+        !isGuest&&userMods.indexOf("projects")>=0&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_dashExpand[1](!_dashExpand[0])},style:{fontWeight:600}},"\uD83D\uDCCA"," Projects ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_dashExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
+        !isGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&e("li",{className:"sidebar-item"+(page==="overseas"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("overseas");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDF0F"," Overseas Project")),
+        !isGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&e("li",{className:"sidebar-item"+(page==="domestic"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("domestic");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDFE2"," Domestic Project")),
 
-        // ── Digital Space ── hidden for guest
-        !isGuest&&e("li",{className:"sidebar-divider"},"Digital Space"),
-        !isGuest&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_digiExpand[1](!_digiExpand[0])},style:{fontWeight:600}},"\uD83D\uDE80"," Workspace ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_digiExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
-        !isGuest&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="workspace"?" active":"")},e("button",{onClick:function(){_page[1]("workspace");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83D\uDD17"," Links")),
-        !isGuest&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="tasks"?" active":"")},e("button",{onClick:function(){_page[1]("tasks");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\u2705"," Tasks")),
-        !isGuest&&e("li",{className:"sidebar-item"+(page==="operations"?" active":"")},e("button",{onClick:function(){_page[1]("operations");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83C\uDFE2"," Operations")),
-        !isGuest&&e("li",{className:"sidebar-item"+(page==="crm"?" active":"")},e("button",{onClick:function(){_page[1]("crm");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83D\uDCBC"," CRM")),
-        !isGuest&&e("li",{className:"sidebar-item"+(page==="analytics"?" active":"")},e("button",{onClick:function(){_page[1]("analytics");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83D\uDCC8"," Analytics")),
+        // ── Digital Space ── filtered by modules
+        !isGuest&&(userMods.indexOf("workspace")>=0||userMods.indexOf("operations")>=0||userMods.indexOf("crm")>=0||userMods.indexOf("analytics")>=0)&&e("li",{className:"sidebar-divider"},"Digital Space"),
+        !isGuest&&userMods.indexOf("workspace")>=0&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_digiExpand[1](!_digiExpand[0])},style:{fontWeight:600}},"\uD83D\uDE80"," Workspace ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_digiExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
+        !isGuest&&userMods.indexOf("workspace")>=0&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="workspace"?" active":"")},e("button",{onClick:function(){_page[1]("workspace");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83D\uDD17"," Links")),
+        !isGuest&&userMods.indexOf("workspace")>=0&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="tasks"?" active":"")},e("button",{onClick:function(){_page[1]("tasks");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\u2705"," Tasks")),
+        !isGuest&&userMods.indexOf("operations")>=0&&e("li",{className:"sidebar-item"+(page==="operations"?" active":"")},e("button",{onClick:function(){_page[1]("operations");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83C\uDFE2"," Operations")),
+        !isGuest&&userMods.indexOf("crm")>=0&&e("li",{className:"sidebar-item"+(page==="crm"?" active":"")},e("button",{onClick:function(){_page[1]("crm");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83D\uDCBC"," CRM")),
+        !isGuest&&userMods.indexOf("analytics")>=0&&e("li",{className:"sidebar-item"+(page==="analytics"?" active":"")},e("button",{onClick:function(){_page[1]("analytics");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83D\uDCC8"," Analytics")),
 
         // ── Management ──
         e("li",{className:"sidebar-divider"},"Management"),
@@ -3605,7 +3695,7 @@ function App(){
           :page==="operations"?e(OperationsPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userRole:userRole,projects:_allProjects[0]})
           :page==="workspace"?e(WorkspacePage)
           :page==="tasks"?e(TasksPage,{userName:userName})
-          :e(ProjectList,{projects:page==="domestic"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Domestic"}):page==="overseas"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Overseas"}):projects,admin:canCreateProject,loading:_loading[0],onSelect:function(id){_selectedProject[1](id)},onRefresh:loadProjects,pageTitle:page==="domestic"?"Domestic Projects":page==="overseas"?"Overseas Projects":page==="mgmt"?"Management Dashboard":"All Projects",userName:userName})
+          :e(ProjectList,{projects:page==="domestic"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Domestic"}):page==="overseas"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Overseas"}):projects,admin:canCreateProject,loading:_loading[0],onSelect:function(id){_selectedProject[1](id)},onRefresh:loadProjects,pageTitle:page==="domestic"?"Domestic Projects":page==="overseas"?"Overseas Projects":page==="mgmt"?"Management Dashboard":"All Projects",userName:userName,tasksByPIC:_tasksByPIC[0]})
       )
     ),
     _showUsers[0]&&e(UserManagement,{onClose:function(){_showUsers[1](false)}}),
