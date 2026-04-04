@@ -197,8 +197,8 @@ var e=React.createElement,useState=React.useState,useEffect=React.useEffect,useM
 // ── i18n System ──
 var _lang="en";try{_lang=localStorage.getItem("scci_lang")||"en"}catch(x){}
 var TR={
-en:{mgmtDash:"Management Dashboard",greet_am:"Good morning",greet_pm:"Good afternoon",greet_ev:"Good evening",weeklyBriefing:"Weekly Briefing",activeProjects:"Active Projects",pendingMilestones:"Pending Milestones",openTasks:"Open Tasks",openIssues:"Open Issues",search:"Search projects...",newProject:"New Project",overview:"Overview",gantt:"Gantt Chart",riskMonitor:"Risk Monitor",budget:"Budget & Resources",issues:"Issue Logs",reports:"Reports",stakeholders:"Stakeholders",save:"Save",cancel:"Cancel",del:"Delete",edit:"Edit",close:"Close",back:"Back",noData:"No data available",loading:"Loading...",sb_dashboard:"Dashboard",sb_projects:"Projects",sb_workspace:"Workspace",sb_operations:"Operations",sb_crm:"CRM",sb_bd:"Business Development",sb_analytics:"Analytics",sb_company:"Company",sb_announcements:"Announcements",sb_directory:"Directory",sb_management:"Management",sb_users:"Users",sb_actLog:"Activity Log",sb_account:"Account",sb_logout:"Logout",darkMode:"Dark Mode",lightMode:"Light Mode",lang:"Language"},
-id:{mgmtDash:"Dasbor Manajemen",greet_am:"Selamat pagi",greet_pm:"Selamat siang",greet_ev:"Selamat malam",weeklyBriefing:"Ringkasan Mingguan",activeProjects:"Proyek Aktif",pendingMilestones:"Milestone Tertunda",openTasks:"Tugas Terbuka",openIssues:"Masalah Terbuka",search:"Cari proyek...",newProject:"Proyek Baru",overview:"Ringkasan",gantt:"Gantt Chart",riskMonitor:"Monitor Risiko",budget:"Anggaran & Sumber Daya",issues:"Log Masalah",reports:"Laporan",stakeholders:"Pemangku Kepentingan",save:"Simpan",cancel:"Batal",del:"Hapus",edit:"Ubah",close:"Tutup",back:"Kembali",noData:"Tidak ada data",loading:"Memuat...",sb_dashboard:"Dasbor",sb_projects:"Proyek",sb_workspace:"Ruang Kerja",sb_operations:"Operasi",sb_crm:"CRM",sb_bd:"Pengembangan Bisnis",sb_analytics:"Analitik",sb_company:"Perusahaan",sb_announcements:"Pengumuman",sb_directory:"Direktori",sb_management:"Manajemen",sb_users:"Pengguna",sb_actLog:"Log Aktivitas",sb_account:"Akun",sb_logout:"Keluar",darkMode:"Mode Gelap",lightMode:"Mode Terang",lang:"Bahasa"}
+en:{mgmtDash:"Management Dashboard",greet_am:"Good morning",greet_pm:"Good afternoon",greet_ev:"Good evening",weeklyBriefing:"Weekly Briefing",activeProjects:"Active Projects",pendingMilestones:"Pending Milestones",openTasks:"Open Tasks",openIssues:"Open Issues",search:"Search projects...",newProject:"New Project",overview:"Overview",gantt:"Gantt Chart",riskMonitor:"Risk Monitor",budget:"Budget & Resources",issues:"Issue Logs",reports:"Reports",stakeholders:"Stakeholders",save:"Save",cancel:"Cancel",del:"Delete",edit:"Edit",close:"Close",back:"Back",noData:"No data available",loading:"Loading...",sb_dashboard:"Dashboard",sb_projects:"Projects",sb_workspace:"Workspace",sb_operations:"Operations",sb_crm:"CRM",sb_bd:"Business Development",sb_analytics:"Analytics",sb_company:"Company",sb_announcements:"Announcements",sb_directory:"Directory",sb_management:"Management",sb_users:"Users",sb_actLog:"Activity Log",sb_account:"Account",sb_logout:"Logout",darkMode:"Dark Mode",lightMode:"Light Mode",lang:"Language",sb_requests:"Requests",req_memo:"Memorandum",req_fpb:"FPB",req_stpd:"STPD",req_uhpd:"UHPD",req_mom:"MOM",req_preview:"Preview & Print",req_backEdit:"Back to Edit",req_print:"Print",req_addItem:"Add Item",req_addTraveler:"Add Traveler",req_addParticipant:"Add Participant",req_addAgenda:"Add Agenda",req_addFeedback:"Add Feedback",req_addAction:"Add Action"},
+id:{mgmtDash:"Dasbor Manajemen",greet_am:"Selamat pagi",greet_pm:"Selamat siang",greet_ev:"Selamat malam",weeklyBriefing:"Ringkasan Mingguan",activeProjects:"Proyek Aktif",pendingMilestones:"Milestone Tertunda",openTasks:"Tugas Terbuka",openIssues:"Masalah Terbuka",search:"Cari proyek...",newProject:"Proyek Baru",overview:"Ringkasan",gantt:"Gantt Chart",riskMonitor:"Monitor Risiko",budget:"Anggaran & Sumber Daya",issues:"Log Masalah",reports:"Laporan",stakeholders:"Pemangku Kepentingan",save:"Simpan",cancel:"Batal",del:"Hapus",edit:"Ubah",close:"Tutup",back:"Kembali",noData:"Tidak ada data",loading:"Memuat...",sb_dashboard:"Dasbor",sb_projects:"Proyek",sb_workspace:"Ruang Kerja",sb_operations:"Operasi",sb_crm:"CRM",sb_bd:"Pengembangan Bisnis",sb_analytics:"Analitik",sb_company:"Perusahaan",sb_announcements:"Pengumuman",sb_directory:"Direktori",sb_management:"Manajemen",sb_users:"Pengguna",sb_actLog:"Log Aktivitas",sb_account:"Akun",sb_logout:"Keluar",darkMode:"Mode Gelap",lightMode:"Mode Terang",lang:"Bahasa",sb_requests:"Permintaan",req_memo:"Memorandum",req_fpb:"FPB",req_stpd:"STPD",req_uhpd:"UHPD",req_mom:"MOM",req_preview:"Pratinjau & Cetak",req_backEdit:"Kembali ke Edit",req_print:"Cetak",req_addItem:"Tambah Item",req_addTraveler:"Tambah Traveler",req_addParticipant:"Tambah Peserta",req_addAgenda:"Tambah Agenda",req_addFeedback:"Tambah Feedback",req_addAction:"Tambah Aksi"}
 };
 function t(k){return(TR[_lang]||TR.en)[k]||(TR.en[k]||k)}
 function setLang(v){_lang=v;try{localStorage.setItem("scci_lang",v)}catch(x){}}
@@ -6768,6 +6768,410 @@ function GlobalSearch(p){
         e("span",{style:{marginLeft:"auto"}},results.length+" result"+(results.length!==1?"s":"")))))
 }
 
+
+// ── Request Module: Document Generator ──
+var SCCI_LOGO_B64="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABvAPADASIAAhEBAxEB/8QAHAAAAgIDAQEAAAAAAAAAAAAAAAYFBwEDBAII/8QAQxAAAQMDAwIDBQUEBwcFAAAAAQIDBAAFEQYSIRMxQVFhBxQVInEWIzKBkUJSodEXJGKTscHhJTM0VWNykkRTc4KU/8QAGQEBAAMBAQAAAAAAAAAAAAAAAAMEBQEC/8QALhEAAgIBAwMCBAUFAAAAAAAAAAECAxEEEiEFMUFRYQYTFCIVMpHB4VJxobHw/9oADAMBAAIRAxEAPwD6pooooAooooAoornmSWojC3n1hDaeSTXJSUVlhJt4R0ZHnXBOusOESJEhtKv3c5P6Uu3e4zLkg/Bnm1MEZUlCsO/mD/lUFbrS65IdeuQdYisje6pQIUryA+tZN/UZbtlMc+/g0KdHHa5Wyx7eSwLbcWbgyXWN2wK25UnGT6Vrud3i25xtMkrTvGQoJyP1pRtVycnajiICejFb3BppPZI2nv61x2y4Z6kOelb8N0n1LZz+IVH+JtxSXfOM/wAeh7+gxLntjOPP6+pYEG4xZqcx3kL9Aef0rszVauWSfEmr6aghpJymSpW1OPA5/wAqnIWpGIqm4z7y5P70jGAP5j1qWjqLztvW33I7dGu9D3DdRXhpaXEJUhQUkjIINe61U88ooBRRRXQFFFFAFFFFAFFFFAFFFFAFFFFAFFFFAFFFFAFBI86D2qrfa9qSRDcZtMJwtFbfVeUk4JGThOfyzXmUlFZZDqL1RW7JeC0dw86Nw8xXy4q6TBz73ICe/wDvlcfxpldsOpYdjN1eceTG2BZHvB3hJ8dueKi+dnsjMh1Z2Z21t4L/AKUNTW263OXhpKBFQfkG8DPmTVJJu1wzxOkjP/VV/OrZ9l+p3brCkRJ7u9+KApK1HlTfmfUVDaoamPy5ZSLWg6zF3LbHD8ZNSdK3VJBCWknz6g4qdnQLu2zFYtr+GmkYWtTuFKV658Kp/VmqZt3vT76H3G4wUUMtocICUZ4OB4nvmuSyt3W8z0Q7e8+t5WTjrEAAdyTniqcNFTVmMM8+5Ld8S2WWKOzOO3uXVaod5antrmuMqZGd3KSTx6DzrlVA1EpSgmQ0kZP4FhOR+QqpdQwbvp+YmLcHnEuKT1ElLpIIzjOc+da7Lf7habi3LYkOKKD8yFLJStPiDXfpq2lBt9/U8v4gnCz760n/AGLldsk+ZZlMTnEqlNL3MqK85B7gmof7LXH/AKH96K0+0zVSmdPwEW50tquLZcK0nBDeBwD65xVTibIHKZDgH/ef51y7RUSaUsvHuTW/Edmkk4QSeef1PoPSsWfAQuPNLZYAyjCwog+I+lMG9I/aH61QkfTmoV2M3UFwRumXQC8d5RjO4D6c0uGVKUrPvDv06h5/jVylqmCgk8e5Q1HWJ7t9leMn0/uGM5GPOsdRH76f1qo9C6hfkafvFskuqWpmI46ypSuQnBBGfTI/Wq995kEj71w8Dsupnelg5Z1WMIRmo5yfT6VBQ4IP0rNI/siUpellKWoqUZLnJOfKnipovKyaNFvza1PGMhRRRXSUKKKKAKKKKAKKKKAKKKKAKKKKAFdjVVe0u/yLPqFDTcG3vIcYSsLfjBajyQRmrUV2NVx7RL7bYV0ai3exJnJS31G3VLxwTyB+YqOz8pT1zxS3u2+4hfbWYO1ss2fP3Mfzrsc9pN6eZUw8xAW0obShbGQR5EZrP2l0sPw6Sa7+L3+lN0SHoyfpr4muDBjBTRKk7/mQrHbv3zUC3PszFpVljahf/sQfte6VnNnsx8v6oOf41Ymhr5b7lZ7hKj26JDnxWlF1LSAApOCQfPHHaqQydxPOPLNPnssS44rUJSklHw5YJ9ecD/GvMJPJFotVZ89Rbyjg+3EzKR8Ms3r/AFMU5ezLUki8X15l2Hb2UpZK97DAQonI8RVRHcUp8Djt+VO/sgmsQdUH3p1DQeYU2gqOApWQcUhJ7lljS6q13xU5cZLtlQIktwLlRWHlJGAXGwoj9a0/BrZ4W6F/cp/lSB7R9aTbTd48ezSWSno7nRtC8Kzxz4cUqf0j6iIUeuyMD/2RUztgng17+o0VzcJLLGr2l6gesFzhRIUWApr3fdh2OF7fmIAHkOO1KH25nKSd1vtHbxhprp9qin3pdndmY67lvQpfGPmyc8fnSZjPAHcHx9KgnN7uDJ12qtje1FtLg+nLYoSbREW4hGHWEFSQPl5SOMeVefg1t7+4RP7lP8qgo2oYaNEplR5bKVtRdqSSMhwIwBjzz4VWY9oWohtBlN5/+JNWJWJdzZv19NKi5c5XsXBdIsW32mdJixIqHG2FqH3SQDgZwfSqcTriWCMW6z//AJE0x6Tv181M3d40lwPtCEvahLYTlZ4SM/rVbSYz0V9TMppxtxJwpC04IqOyTeGuxm63VynCFlOUuS9/Zvc3Lrp8yHWY7KuspO1hvYnjHh5020i+x8EaTOe3vLmP4U9VYh+VGzopOVEW++Aooor0WgooooAooooAooooAooooAooooAPaljW+lWNTQkIU50ZTOS07jPfuCPI0z0VxrPDPM4Rsi4y7Mpr+iafj/j4f/iqgeye4/8AMYf/AIqq5aKj+TEpfhmn/p/yymf6Jrh/zCHn0SqnfSNltulre5FVMYckunL61EDJxjGPACm+lDV9gMkrmwk/e4+8R+96j1qG/dTBzqjlotaLp2lhas/b7idevZ5b5FxW7bLzEjsLUT0XDnZnwBB7Vyu+zN2Odrt7gNqPI3AiuiFAkzXFIjsqUR+JR4CfqT2plehR7rDbD8tC50NvDvu43laB28uRWVVrZ2p/Zh+OS9qegaOE0285748Ckj2aKeXtbvkBav3Ugkn+NSFh0FboNybfuV2iSWmzuDSDgKUDxnJ7elS+nBbk3hgRve1u4VtKwkDt5DmuFlq1yH0tMif1Vq2gAJOTT65qKkkst47s5HoOkjN/a+Fnt/IxawsNt1RbwTKabdjZ2SEkKCc/sq9KRU+zlvHF/gfp/rTZPZhMwfhUac20tK9zxdSRvV4DI4GKh12WclxtLbQfS4cJW0oKT+vh+ddu11mVtgpPzh+f+9T1+DaTUPfc8emeODiY9man1FLF6iLxyQhBJ/xrcfZQ/tx8TZ/uj/OrC03Z0WqP82FyFj51j/AelTVatNW6CdiwzKt6XpFNqCyhf0jpyPpy2hhlXUeWdzrpGCs/5AeArff9PW2+s7bhHStYGEuDhafoamaKs7VjBOqoRjsS49CD0lYkadtioSHy8jqqcSpScHB8DU5RRXUsHqEFCKjHsgooooegooooAooooAooooAooooAooooAoooJxQBRWN1ZJxQBRWNwrG8c8jjvz2oCKvdnbuUcth1TJyVfIOCf7Q8aTl2C7WqUl+IOqUHKVNH+BHlVjFaR+IgfU0BaVcAg/Q1S1Ggqve58P1Rao1llK2rlPwK1otQkT2bmltURz5kvMLSRlRGMj05riXbn7I2W4EdyTcHknMhKPlbTnsPWnYKTx2Oe1AUD2wfpXHoIbcefX9wtXNPnt6fsIEDScx9YXNWlhJOTzuWac7TbI9sZLUZJGeVKJyVH1rtJGfWsbxz24r3p9DTp+YLn1OX6u2/ib49D1RXnenGcjHnms7hjPh3zVsrGaK87hnFZ3DGfCgM0VjcKxvHOeMUB6oryVgH+NZ3DPrQGaK8laR3IH1NG4UB6orzvGQOOe3NZKgCAaAzRWNwoJxj1oDNFed4rOfQ0BmisBQPbmjNAZqo/a/Mgxr9/tObMjJTaXXIyY7q0dSQF/ICE9/zq3KgH7I47rZm8rW0qMi3qidNQJVvLgUFeWMD60Al2eyMnX9pXKXOEp63C6upU+oJTIBQk/L2xhRGK3+2ZrKbW7MTc/hLQeLzsHJLLuE9JagDyAc0yX2yXN69SLraJUViZ8NVDjqeQVBDhcCtxH7vH1rn1rZb7PMV+xS47UnouRpKHyrprQsDJx2yCCRx40AlRZCjH1aVzFzf69Z0iRz95lMf5/QHv+dLNshRbq65Gsi7kq6yEzjccKUlrpYdCCndxkq2AHJ5zzViO6HuDd1htRpEQ2dZiOTApJDhcjABJT4fNtT9MVvtOi51vlWCYl+GZMNyU3LCQoIejvOKXsAx3SSCM8d6Aru8XNGoRCuL5kOwxFtkKQ1FyVuKcC3XEpB53ZSnt386kLxD+CWe13DSEe5RfiBkWlbc1JDqVvYCFqHf5VJJH+tNMT2fTrZYfdbVKiCY3dhcGVvJJQltOQhBwM8DHHbvipuXY75dbdakXeVAVNh3RmatbCFJQWkHO0A87ufpQCWm0hmRPnsSH0O6bmRLfDQHDsDSQ0FZHiVb1E5rV7O2mjrJo21U33pD81VxCioM9PeoN4zwTnFNtz0jcX9QyDFlsN2KfJamTWSD1eo3t4SfJWxOfLFadOaKuVnnWaX77HW9GemplAFWHWH3VOJA4/Ekkd+O9AcdutDuoNd365OTpDUq1XJmPHCVHYllLaFqRt/tbzk/SodVyecv2uHPeN0S4QJSWElX7UYBHHp8yv0pwmaVuQ1K7Lt89lm2SpLU6SyUnqKdbSBgKH7J2oyPQ1BvezBSLfDchOxUXktSG50hRXiR1m1pP6KUD25xQCdbxb1aUuyLMq4qt4hxBNQ8FnMhTyMhGex257d8ip6xR27o3E0+y7NatD1xeUqLIcIkNtNtJOxZ7jKznbxxU7J0Lc21vrtkyM2qTb4jL3UUvHvEdaSlwADsUpIPj2rczo++pbduK7nD+0Cp/vgWlCgxt6fT2Ed8FP8AhQCTc3JtqmNoS8sw4kW4Wxbhc5S2pwpaJJOThW0ZptnQF3aw6Bsr8hxuFJbbXLS2ogvJaj7gjIOQCrGfpWt/2bS5SHEybi06p+3SWXlq3ZMl15DoWB+6CnHnU7eNL3J6zadFrnMR7tZi2pC3ElTTn3fTWlQHOCCcUAuyLC1MvUbSM6ZMdh221rmNLQ5sUpSnVJRk+aEjApPlXWc9aZL01wlm42WI0peT80hB3D8ykKNWBJ0dfo8WG/Z7tFbvPujsSVIkIUpKwtZWCnx+VROM+Brln+zNbun5NsjS2k7W4SYy17uFMAhRV/3bldvOgI2QwG9aXf39U2PdVtS1tLIJZlRiyQhCecDbjP1BqM1it2PdIAjuraKbDAAKFlP/AK1oHt6cU6q0fdZF9JmXJl2yoffkNIIV10qdbKcZPG1O44Hao46Fvsm1SW50+3Oz0MRosR3pqwltl0OZWe5KsDI9KA6Ne6ctd11pp5M4yerPU4yoNulI2NtqWMeRzj60iu3CRGadCitLEu3XOIVuKOUlTzxbP6oIz61acayXuVcrDOvcm3uSLe++tfuyFJCkLb2JAB8c96gZvs8mTrNOhSZMQKdiKZZUncQlz3lx1Cjx5LAOPWgFxbMCUy5Pv14ft67d7lDgPJK1JaWGEOk7R33c5qR9rS5D14W3BUovLtIUyAogFZmM7f8AKpS6aFvLzUiHAuUNmBcI7DU1LjSlqC0ICCtvyJAHepbUek5dyv0WdHkMIaZitsbXM7iUyW3c8DybI+poBTRHZ1fPt6HnXm40y5PPL6LhQpJENo4B8CFZri0+47rmM3GnzJaPhlrU624l3aVPdVxCXFY7kJaH6mmT7E3q2udawTIDTyLnKmtdcKKUoeQlO0gDuMH07V7d0LcrbDit6dnxWX1wjBmOPNn50lRWXEgdlAqV+tAJb+oJrpubkp1fTuVth4UFYAfSlCjgeBKSo1K2JuPP1Dd0p+OKvDcqb7u4lxfuqSAsJHfGee3nTBc/Z2ZFulxI77KE9WG5FKwSUBlAQd3HiM9vOt8PTWpIy7jDTPtyLPNfkOqCEuB9PU3EYUMYIJFAJ9jQ1GiQIlreuLLiL1BTKgySoONLyouKJzylQGf/AKmmX2WXORMvd+VJeLjVwX8RjJLgOxvqLaAwPRCDn1Feoujr3JUZl3lQV3APMFPS3BG1lKwlROMlRKgfoMV3aU0Ezpm526ZblIS4IymJ/wAysPKISQpI8PmB444NAPNJer3Hm9b6NaalSGmpMh5D7bbykpcCGVKSCAcHCqdK45drgTJTEmVDjPSGDlp1xsKU2f7JPI/KgK4ha9vDVqt15uLEF2DMjy3fd46VpdSWAtXCiTuztxgDjv4Go66alvdsv7N0fuESYFWUPIjRkrDAU7JaQD+IhZSFcE7SfDGTi1kWm3objoRBipRGKiykNJw0VAhW3jjIJzjvk1yQ9LWGGh5EWy21lDyC24lEZAC0k52kY5GfCgEtvVOpTcLfbnGo7C5cxTCZUmL0/uwwXCrpBw4IUnH4uc+FaWtc3qepEWBFaMlhpxbrqGOqh9SXVtpKRvTsbPTJKsqxnGPGmmfoSxypFuUiBDYjRHlPqjNx0Bt8lsoG8Y5xnP5CpWVp2yy2GGZVpt7zUdOxpDkdCg2nySMcD0FAKQ1PfHI0q5bYDMSK/FbXEUgrcV1UNFQ6gVtGC6cEA5xUNctR3eRI05dnpLDcJy5SNsKMVBZbbaewHFbsKJ2ZI24Bx5VaAtsIMLZEOMGVlJU2GxtUUgBORjw2px5YHlXOmwWhNw9+Ra4KZu8udcMJDm491bsZz60AiRdW6ikRGn0x2W2pgjlh6RGKEtlx1CSnAcJcG1eQr5eR25rHxi/y9U2eEu6RI6mZsyK8UskIkhDbakkoK/xYWeMnB55p7i6es8VwrjWqAyskElthKTwrcOw8Fc/XmvcuyWyYMSrdDeHUL33jKVfeEYK+R+LAHPpQCz7TZy/c4VmjypkZ+4ukLdhIWt5tlA3KUkIBPfYnP9qoOPrK+LsdslLbEZhuIRcJC4peWzIbVsWHGwtKkJ4KiQCfSrNMZgykyei37wlBbDu0bgknJTnvjIHFR0jTVkkvl6RZ7c68VlZWuMhSionJOSO5PNAJE7Wt4iKuXvKY0dxDLzsVvoKW06lBG1aXgrB+U5KSBjPpUpf9T3Fi7yIFqXBUtK4DaFOgrSFPrdCt20jwQkj60ys6es7DzzrNpgNuPpUh1SY6QVpV+IHjkHx869QtP2eDu9ytUCPuWlw9JhKcqT+E8DuMnB8M0AnJ1Vdmr1HjKWzJj9dcJ91MXpIDyGVLVtJcKj8yD+zjwzXMNZX2Bb4kq4ptzwnWoTmi2hTaWXNzScLyoko+9CieMYOM0+fBLX7+ub8Nhe+LO5T/AEU7ycYyVYz2JFbVWyCpCEKhxihDJjpSWgQlo4ygD904HHbgUAp3C73qJNhWtM63yJknqL6zMcfIlCUnaWy6OSVAg7uwPFdk5673PQLquqzaby8zs39YBCHArHCxnG7HB5I3elSo0zYxFMYWe3COV9Qte7I27sY3Yx3xxmuv4XA+HfDzCje4BO33fpJ6eM5xtxjGaArhjUDlllItUSHNYush5llTciaZrLSVJWrqpJWMk7CMEpyceFScG9anm3Ni2JECK+Wn3Fvvsk5ShxtKVhtKzgkLPylXhnPhTa1YLS1DeiN2uCiK8QXWUsJCFkdiRjmt0G1W+AECDBixwhKkp6TSUYCiCQMDsSAT9KArydqu4z7JIbKWm3oUfbcigqSUSeulCUpIIKRgKV9Cmuudq66RbHPv2+3riofcjtQNquqgpd6YUte7wIKlDaMDx4zT2q3QlIkIVEjlMhQW8C2MOKGMFXmeB38q5/gNo99dmfC4PvboUHHugnesKGFZOMnI4PnQCW9qDVbXWZTDbew+0lL6YwC+moL3lLPWO4gpTzuHCifCnPTc/wCJ2WNL6zb5cCsrbbU2CQog/KrkHjBHnmtKdLWFDRaRZbalsqCykRkAbgCAe3cAn9TUrHZbjsoZYbQ20gBKUIThKQOwAHagNlFFFAFFFFAFFFFAf//Z";
+var SCCI_SIG_B64="data:image/jpeg;base64,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";
+var REQ_MONTHS=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+function fmtDateID(d){if(!d)return"";var dt=new Date(d+"T00:00:00");if(isNaN(dt))return"";return dt.getDate()+" "+REQ_MONTHS[dt.getMonth()]+" "+dt.getFullYear()}
+function fmtRp(n){var v=parseFloat(n)||0;return v.toLocaleString("id-ID",{minimumFractionDigits:2,maximumFractionDigits:2})}
+function todayISO(){return new Date().toISOString().split("T")[0]}
+
+function ReqInput(p){return e("div",{style:{marginBottom:10}},
+  p.label&&e("label",{className:"label"},p.label),
+  e("input",{className:"input",type:p.type||"text",value:p.value||"",onChange:function(ev){p.onChange(ev.target.value)},placeholder:p.placeholder||"",style:p.style||{}}))}
+
+function ReqTextArea(p){return e("div",{style:{marginBottom:10}},
+  p.label&&e("label",{className:"label"},p.label),
+  e("textarea",{className:"input",value:p.value||"",onChange:function(ev){p.onChange(ev.target.value)},rows:p.rows||4,style:Object.assign({resize:"vertical"},p.style||{})}))}
+
+function ReqSelect(p){return e("div",{style:{marginBottom:10}},
+  p.label&&e("label",{className:"label"},p.label),
+  e("select",{className:"select",value:p.value,onChange:function(ev){p.onChange(ev.target.value)}},
+    p.options.map(function(o){return e("option",{key:o,value:o},o)})))}
+
+// Print helper
+function printPreview(ref,title){
+  var w=window.open("","_blank");
+  w.document.write("<html><head><title>"+title+"</title><style>body{font-family:Arial,sans-serif;margin:20px;font-size:12px;color:#000}table{border-collapse:collapse;width:100%}th,td{border:1px solid #000;padding:4px 6px}@media print{body{margin:10mm}@page{size:A4;margin:12mm}}</style></head><body>"+ref.current.innerHTML+"</body></html>");
+  w.document.close();w.print();
+}
+
+// ── MEMO ──
+var MEMO_TEMPLATES={
+  apostille:{label:"Apostille / Legalization",body:function(d){return"Sehubungan dengan "+d.perihal+", bersama ini kami sampaikan permintaan kepada "+d.kepada+" untuk memproses legalisasi dokumen melalui mekanisme apostille atas dokumen-dokumen yang dipersyaratkan.\n\nAdapun dokumen-dokumen terkait akan disampaikan secara terpisah. Kami mohon agar dapat:\n\n1. Melakukan verifikasi final daftar dokumen yang wajib diapostille;\n2. Mengkoordinasikan proses notarisasi (jika diperlukan) sebelum apostille;\n3. Mengurus proses apostille melalui instansi berwenang;\n4. Memberikan estimasi waktu penyelesaian serta estimasi biaya;\n5. Menginformasikan apabila terdapat dokumen tambahan atau persyaratan khusus.\n\nDemikian disampaikan. Atas kerja sama dan dukungan, kami ucapkan terima kasih."}},
+  procurement:{label:"Procurement / Pengadaan",body:function(d){return"Sehubungan dengan "+d.perihal+", bersama ini kami mengajukan permintaan pengadaan barang/jasa sesuai kebutuhan operasional.\n\nRincian pengadaan yang diperlukan terlampir dalam dokumen Form Permintaan Barang (FPB) yang telah kami siapkan. Kami mohon agar proses pengadaan ini dapat ditindaklanjuti dengan memperhatikan:\n\n1. Spesifikasi teknis sesuai kebutuhan;\n2. Timeline pengadaan yang telah ditetapkan;\n3. Mekanisme evaluasi dan seleksi vendor;\n4. Ketersediaan anggaran.\n\nMohon konfirmasi dan arahan lebih lanjut mengenai proses pengadaan ini. Demikian disampaikan, atas perhatian dan kerja sama yang baik kami ucapkan terima kasih."}},
+  travel:{label:"Travel / Perjalanan Dinas",body:function(d){return"Sehubungan dengan "+d.perihal+", bersama ini kami menyampaikan rencana perjalanan dinas yang perlu dilaksanakan.\n\nPerjalanan dinas ini bertujuan untuk mendukung kegiatan operasional dan pengembangan bisnis Perseroan. Detail rencana perjalanan termasuk tujuan, durasi, dan estimasi biaya telah kami lampirkan dalam dokumen STPD dan UHPD terkait.\n\nKami mohon persetujuan atas perjalanan dinas ini agar dapat segera diproses. Demikian disampaikan, atas persetujuan dan dukungannya kami ucapkan terima kasih."}},
+  followup:{label:"Follow-up / Tindak Lanjut",body:function(d){return"Menindaklanjuti pembahasan sebelumnya terkait "+d.perihal+", bersama ini kami sampaikan perkembangan dan tindak lanjut yang telah dilakukan.\n\nBerikut adalah status terkini:\n\n1. [Status item 1]\n2. [Status item 2]\n3. [Status item 3]\n\nKami mohon arahan dan keputusan lebih lanjut agar proses dapat berjalan sesuai timeline yang telah ditetapkan. Demikian disampaikan, atas perhatian dan arahannya kami ucapkan terima kasih."}},
+  info:{label:"Information / Penyampaian Informasi",body:function(d){return"Bersama ini kami sampaikan informasi terkait "+d.perihal+" untuk menjadi perhatian dan pertimbangan.\n\nHal ini kami sampaikan mengingat pentingnya koordinasi lintas divisi dalam rangka mendukung pencapaian target Perusahaan. Adapun detail informasi sebagai berikut:\n\n1. [Detail informasi 1]\n2. [Detail informasi 2]\n3. [Detail informasi 3]\n\nMohon dapat ditindaklanjuti sesuai dengan kewenangan masing-masing. Demikian disampaikan, atas perhatiannya kami ucapkan terima kasih."}},
+  general:{label:"General / Umum",body:function(d){return"Sehubungan dengan "+d.perihal+", bersama ini kami sampaikan hal-hal sebagai berikut.\n\n[Silakan lengkapi isi memorandum di sini]\n\nDemikian disampaikan. Atas perhatian dan kerja samanya, kami ucapkan terima kasih."}}
+};
+function ReqMemo(p){
+  var _d=useState({kepada:"",dari:"Head of Country Representative",perihal:"",nomor:"",tanggal:todayISO(),lampiran:"-",body:"",tpl:"general",notes:""});
+  var _pv=useState(false),d=_d[0],pv=_pv[0],ref=useRef();
+  var _genOpen=useState(false);
+  var set=function(k,v){_d[1](Object.assign({},d,((o={})[""+k]=v,o)));var o};
+  
+  function generateDraft(){
+    var tpl=MEMO_TEMPLATES[d.tpl]||MEMO_TEMPLATES.general;
+    var body=tpl.body(d);
+    // If user provided notes, append context
+    if(d.notes&&d.notes.trim()){
+      body=body.replace(/\[Silakan lengkapi.*?\]/g,d.notes.trim());
+      body=body.replace(/\[Status item 1\]/,d.notes.trim());
+      body=body.replace(/\[Detail informasi 1\]/,d.notes.trim());
+      // Remove remaining placeholders
+      body=body.replace(/\n\d+\. \[.*?\]/g,"");
+    }
+    set("body",body);
+    _genOpen[1](false);
+    showToast("Draft generated — review and edit as needed","success");
+  }
+  
+  if(pv)return e("div",null,
+    e("div",{style:{display:"flex",gap:8,marginBottom:16}},
+      e("button",{className:"btn btn-ghost",onClick:function(){_pv[1](false)}},"← "+t("req_backEdit")),
+      e("button",{className:"btn btn-success",onClick:function(){printPreview(ref,"Memo - "+d.nomor)}},"🖨️ "+t("req_print"))),
+    e("div",{ref:ref,style:{background:"#fff",padding:40,border:"1px solid #e5e7eb",borderRadius:8,maxWidth:780,color:"#000",fontFamily:"'Times New Roman',serif",fontSize:13,lineHeight:1.6}},
+      e("div",{style:{marginBottom:20}},e("img",{src:SCCI_LOGO_B64,style:{height:60}})),
+      e("h2",{style:{textAlign:"center",fontWeight:"bold",fontSize:16,margin:"10px 0 20px"}},"MEMORANDUM"),
+      e("table",{style:{width:"100%",marginBottom:20,fontSize:13,borderCollapse:"collapse"}},e("tbody",null,
+        [["Kepada",d.kepada],["Dari",d.dari],["Perihal",d.perihal],["Nomor",d.nomor],["Tanggal",fmtDateID(d.tanggal)],["Lampiran",d.lampiran]].map(function(r){return e("tr",{key:r[0]},e("td",{style:{width:100,fontWeight:"bold",verticalAlign:"top",padding:"2px 0",border:"none"}},r[0]),e("td",{style:{width:10,border:"none"}},":"),e("td",{style:{padding:"2px 0",border:"none"}},r[1]))}))),
+      e("hr",{style:{border:"1px solid #000",marginBottom:16}}),
+      e("div",{style:{whiteSpace:"pre-wrap",textAlign:"justify"}},d.body),
+      e("div",{style:{marginTop:40}},
+        e("p",null,"Hormat kami,"),
+        e("img",{src:SCCI_SIG_B64,style:{height:50,margin:"8px 0"}}),
+        e("p",{style:{fontWeight:"bold",textDecoration:"underline"}},"Jemy Mustany"),
+        e("p",null,"Head of Country Representative"))));
+
+  return e("div",null,
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
+      ReqInput({label:"Nomor",value:d.nomor,onChange:function(v){set("nomor",v)},placeholder:"MM-__/SCCI-___/JM/__/2026"}),
+      ReqInput({label:"Tanggal",value:d.tanggal,onChange:function(v){set("tanggal",v)},type:"date"}),
+      ReqInput({label:"Kepada",value:d.kepada,onChange:function(v){set("kepada",v)}}),
+      ReqInput({label:"Dari",value:d.dari,onChange:function(v){set("dari",v)}}),
+      e("div",{style:{gridColumn:"1/-1"}},ReqInput({label:"Perihal",value:d.perihal,onChange:function(v){set("perihal",v)}})),
+      ReqInput({label:"Lampiran",value:d.lampiran,onChange:function(v){set("lampiran",v)}})),
+    // ── Draft Generator ──
+    e("div",{style:{margin:"16px 0",padding:16,background:"linear-gradient(135deg,rgba(72,127,255,.06),rgba(69,179,105,.06))",borderRadius:10,border:"1px solid rgba(72,127,255,.15)"}},
+      e("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:_genOpen[0]?12:0}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:8}},
+          e("span",{style:{fontSize:18}},"\u2728"),
+          e("span",{style:{fontSize:13,fontWeight:600,color:"var(--text-primary)"}},"Draft Generator"),
+          e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},"— auto-generate memo body")),
+        e("button",{className:"btn btn-sm "+(_genOpen[0]?"btn-ghost":"btn-primary"),onClick:function(){_genOpen[1](!_genOpen[0])}},_genOpen[0]?"Close":"\u2728 Generate")),
+      _genOpen[0]&&e("div",null,
+        e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+          e("div",{style:{marginBottom:0}},
+            e("label",{className:"label"},"Memo Type"),
+            e("select",{className:"select",value:d.tpl,onChange:function(ev){set("tpl",ev.target.value)}},
+              Object.keys(MEMO_TEMPLATES).map(function(k){return e("option",{key:k,value:k},MEMO_TEMPLATES[k].label)}))),
+          e("div",null,
+            e("label",{className:"label"},"Key Points / Notes (optional)"),
+            e("input",{className:"input",value:d.notes,onChange:function(ev){set("notes",ev.target.value)},placeholder:"Brief notes to include in the draft..."}))),
+        e("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+          e("button",{className:"btn btn-primary",onClick:generateDraft,disabled:!d.perihal},"\u2728 Generate Draft"),
+          !d.perihal&&e("span",{style:{fontSize:11,color:"#EF4A00"}},"Fill in Perihal first")))),
+    ReqTextArea({label:"Isi Memorandum",value:d.body,onChange:function(v){set("body",v)},rows:10}),
+    e("button",{className:"btn btn-primary",onClick:function(){_pv[1](true)}},t("req_preview")));
+}
+
+// ── FPB ──
+function ReqFPB(p){
+  var _d=useState({nomor:"",tanggal:todayISO(),bagian:"SCCI RO Philippines",tglButuh:"",items:[{jenis:"",satuan:"",diminta:"",keterangan:""}]});
+  var _pv=useState(false),d=_d[0],ref=useRef();
+  var set=function(k,v){_d[1](Object.assign({},d,((o={})[""+k]=v,o)));var o};
+  var setItem=function(i,k,v){var arr=d.items.slice();arr[i]=Object.assign({},arr[i],((o={})[""+k]=v,o));set("items",arr);var o};
+
+  if(_pv[0])return e("div",null,
+    e("div",{style:{display:"flex",gap:8,marginBottom:16}},
+      e("button",{className:"btn btn-ghost",onClick:function(){_pv[1](false)}},"← "+t("req_backEdit")),
+      e("button",{className:"btn btn-success",onClick:function(){printPreview(ref,"FPB - "+d.nomor)}},"🖨️ "+t("req_print"))),
+    e("div",{ref:ref,style:{background:"#fff",padding:40,border:"1px solid #e5e7eb",borderRadius:8,maxWidth:780,color:"#000",fontFamily:"Arial,sans-serif",fontSize:12}},
+      e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:10}},
+        e("img",{src:SCCI_LOGO_B64,style:{height:50}}),
+        e("div",{style:{textAlign:"right",fontSize:11}},e("span",{style:{border:"1px solid #000",padding:"2px 6px",fontSize:10}},"F.ADM02-01"),e("br"),
+          "Nomor : "+d.nomor,e("br"),"Tanggal : "+fmtDateID(d.tanggal))),
+      e("h2",{style:{textAlign:"center",fontWeight:"bold",fontSize:15,margin:"10px 0 4px"}},"FORM PERMINTAAN BARANG"),
+      e("p",{style:{textAlign:"center",fontSize:13,marginBottom:16}},"(FPB)"),
+      e("table",{style:{fontSize:12,marginBottom:16,borderCollapse:"collapse"}},e("tbody",null,
+        e("tr",null,e("td",{style:{width:140,border:"none"}},"Bagian"),e("td",{style:{border:"none"}},": "+d.bagian)),
+        e("tr",null,e("td",{style:{border:"none"}},"Tanggal dibutuhkan"),e("td",{style:{border:"none"}},": "+fmtDateID(d.tglButuh))))),
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
+        e("thead",null,e("tr",{style:{background:"#f3f4f6"}},
+          ["No.","Jenis Barang","Satuan","Jumlah Diminta","Keterangan"].map(function(h){return e("th",{key:h,style:{border:"1px solid #000",padding:4,textAlign:"center"}},h)}))),
+        e("tbody",null,d.items.map(function(it,i){return e("tr",{key:i},
+          e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},i+1),
+          e("td",{style:{border:"1px solid #000",padding:4}},it.jenis),
+          e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},it.satuan),
+          e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},it.diminta),
+          e("td",{style:{border:"1px solid #000",padding:4}},it.keterangan))}))),
+      e("div",{style:{display:"flex",justifyContent:"space-between",marginTop:40,fontSize:12}},
+        ["Diminta Oleh,","Diketahui Oleh,","Disetujui Oleh,","Diterima Oleh,"].map(function(l){return e("div",{key:l,style:{textAlign:"center"}},
+          e("p",null,l),l==="Diminta Oleh,"?e("img",{src:SCCI_SIG_B64,style:{height:40,margin:"8px 0"}}):e("div",{style:{height:60}}),
+          e("p",{style:{borderTop:"1px solid #000",paddingTop:4,minWidth:100}},l==="Diminta Oleh,"?"Jemy Mustany":"________________"))}))));
+
+  return e("div",null,
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
+      ReqInput({label:"Nomor FPB",value:d.nomor,onChange:function(v){set("nomor",v)},placeholder:"___/SCCI-PHL/FPB/___/2026"}),
+      ReqInput({label:"Tanggal",value:d.tanggal,onChange:function(v){set("tanggal",v)},type:"date"}),
+      ReqInput({label:"Bagian",value:d.bagian,onChange:function(v){set("bagian",v)}}),
+      ReqInput({label:"Tanggal Dibutuhkan",value:d.tglButuh,onChange:function(v){set("tglButuh",v)},type:"date"})),
+    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Items"),
+    d.items.map(function(it,i){return e("div",{key:i,style:{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 2fr auto",gap:8,marginBottom:8,alignItems:"end"}},
+      ReqInput({label:i===0?"Jenis Barang":"",value:it.jenis,onChange:function(v){setItem(i,"jenis",v)}}),
+      ReqInput({label:i===0?"Satuan":"",value:it.satuan,onChange:function(v){setItem(i,"satuan",v)}}),
+      ReqInput({label:i===0?"Jumlah":"",value:it.diminta,onChange:function(v){setItem(i,"diminta",v)}}),
+      ReqInput({label:i===0?"Keterangan":"",value:it.keterangan,onChange:function(v){setItem(i,"keterangan",v)}}),
+      e("button",{className:"del-icon",style:{marginBottom:12},onClick:function(){if(d.items.length>1)set("items",d.items.filter(function(_,j){return j!==i}))}},"\u2715"))}),
+    e("div",{style:{display:"flex",gap:8}},
+      e("button",{className:"btn btn-ghost",onClick:function(){set("items",d.items.concat([{jenis:"",satuan:"",diminta:"",keterangan:""}]))}},"+  "+t("req_addItem")),
+      e("button",{className:"btn btn-primary",onClick:function(){_pv[1](true)}},t("req_preview"))));
+}
+
+// ── STPD ──
+function ReqSTPD(p){
+  var _d=useState({nomor:"",tanggal:todayISO(),divisi:"Pengembangan Bisnis",bagian:"Representative Philippines",kegiatan:"Non Proyek",namaProyek:"",kodeProyek:"",maksud:"",
+    travelers:[{nama:"Jemy Mustany",nik:"23645",jabatan:"Head of Country Representative",tujuan:"",dariTgl:"",sampaiTgl:"",transport:"Pesawat, Mobil",ket:""}]});
+  var _pv=useState(false),d=_d[0],ref=useRef();
+  var set=function(k,v){_d[1](Object.assign({},d,((o={})[""+k]=v,o)));var o};
+  var setTr=function(i,k,v){var arr=d.travelers.slice();arr[i]=Object.assign({},arr[i],((o={})[""+k]=v,o));set("travelers",arr);var o};
+
+  if(_pv[0])return e("div",null,
+    e("div",{style:{display:"flex",gap:8,marginBottom:16}},
+      e("button",{className:"btn btn-ghost",onClick:function(){_pv[1](false)}},"← "+t("req_backEdit")),
+      e("button",{className:"btn btn-success",onClick:function(){printPreview(ref,"STPD - "+d.nomor)}},"🖨️ "+t("req_print"))),
+    e("div",{ref:ref,style:{background:"#fff",padding:30,border:"1px solid #e5e7eb",borderRadius:8,maxWidth:900,color:"#000",fontFamily:"Arial,sans-serif",fontSize:11,overflowX:"auto"}},
+      e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}},
+        e("img",{src:SCCI_LOGO_B64,style:{height:55}}),
+        e("div",{style:{textAlign:"right",fontSize:11}},e("span",{style:{border:"1px solid #000",padding:"2px 8px",fontWeight:"bold"}},"P - 01"),e("br"),
+          "Nomor : "+(d.nomor||"....../ SCCI-........../......../20.."),e("br"),"Tanggal : "+fmtDateID(d.tanggal))),
+      e("h2",{style:{textAlign:"center",fontWeight:"bold",fontSize:14,margin:"8px 0 4px"}},"SURAT TUGAS PERJALANAN DINAS"),
+      e("p",{style:{textAlign:"center",fontSize:13,marginBottom:8}},"(STPD)"),
+      e("p",{style:{fontWeight:"bold",fontSize:11}},"KANTOR PUSAT"),
+      e("table",{style:{fontSize:11,marginBottom:10,borderCollapse:"collapse"}},e("tbody",null,
+        e("tr",null,e("td",{style:{border:"none"}},"Divisi / Biro"),e("td",{style:{border:"none"}},": "+d.divisi)),
+        e("tr",null,e("td",{style:{border:"none"}},"Bagian"),e("td",{style:{border:"none"}},": "+d.bagian)))),
+      e("p",{style:{fontSize:11,marginBottom:4}},"Kegiatan : "+(d.kegiatan==="Non Proyek"?"☑ Non Proyek  ☐ Proyek":"☐ Non Proyek  ☑ Proyek")+(d.kegiatan==="Proyek"?", Nama Proyek: "+d.namaProyek+", Kode Proyek: "+d.kodeProyek:"")),
+      e("p",{style:{fontSize:11,marginBottom:12}},"Maksud Perjalanan Dinas : "+d.maksud),
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11}},
+        e("thead",null,
+          e("tr",{style:{background:"#f0f0f0"}},
+            ["No","Nama","NIK","Jabatan / Golongan","Tujuan"].map(function(h){return e("th",{key:h,style:{border:"1px solid #000",padding:4},rowSpan:2},h)}),
+            e("th",{style:{border:"1px solid #000",padding:4},colSpan:2},"Lama Perjalanan Dinas"),
+            e("th",{style:{border:"1px solid #000",padding:4},rowSpan:2},"Alat Transportasi"),
+            e("th",{style:{border:"1px solid #000",padding:4},rowSpan:2},"Keterangan")),
+          e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4}},"Dari tgl"),e("th",{style:{border:"1px solid #000",padding:4}},"Sampai tgl"))),
+        e("tbody",null,d.travelers.map(function(tr,i){return e("tr",{key:i},
+          e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},i+1),
+          e("td",{style:{border:"1px solid #000",padding:4}},tr.nama),
+          e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},tr.nik),
+          e("td",{style:{border:"1px solid #000",padding:4}},tr.jabatan),
+          e("td",{style:{border:"1px solid #000",padding:4}},tr.tujuan),
+          e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},fmtDateID(tr.dariTgl)),
+          e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},fmtDateID(tr.sampaiTgl)),
+          e("td",{style:{border:"1px solid #000",padding:4}},tr.transport),
+          e("td",{style:{border:"1px solid #000",padding:4}},tr.ket))}))),
+      e("div",{style:{display:"flex",justifyContent:"space-between",marginTop:40,fontSize:11}},
+        ["Diajukan Oleh,","Diverifikasi Oleh,","Disetujui Oleh,"].map(function(l){return e("div",{key:l,style:{textAlign:"center"}},
+          e("p",null,l),l==="Diajukan Oleh,"?e("img",{src:SCCI_SIG_B64,style:{height:35,margin:"6px 0"}}):e("div",{style:{height:50}}),
+          e("p",{style:{borderTop:"1px solid #000",paddingTop:4,minWidth:130}},l==="Diajukan Oleh,"?"Jemy Mustany":"________________"),
+          e("p",{style:{fontSize:10}},l==="Diajukan Oleh,"?"Manager/GM":l==="Diverifikasi Oleh,"?"GM/Direktur":"Direktur/Direktur Utama"))}))));
+
+  return e("div",null,
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
+      ReqInput({label:"Nomor STPD",value:d.nomor,onChange:function(v){set("nomor",v)}}),
+      ReqInput({label:"Tanggal",value:d.tanggal,onChange:function(v){set("tanggal",v)},type:"date"}),
+      ReqInput({label:"Divisi / Biro",value:d.divisi,onChange:function(v){set("divisi",v)}}),
+      ReqInput({label:"Bagian",value:d.bagian,onChange:function(v){set("bagian",v)}}),
+      e("div",{style:{marginBottom:10}},e("label",{className:"label"},"Kegiatan"),e("select",{className:"select",value:d.kegiatan,onChange:function(ev){set("kegiatan",ev.target.value)}},e("option",null,"Non Proyek"),e("option",null,"Proyek"))),
+      d.kegiatan==="Proyek"&&ReqInput({label:"Nama Proyek",value:d.namaProyek,onChange:function(v){set("namaProyek",v)}}),
+      d.kegiatan==="Proyek"&&ReqInput({label:"Kode Proyek",value:d.kodeProyek,onChange:function(v){set("kodeProyek",v)}}),
+      e("div",{style:{gridColumn:"1/-1"}},ReqInput({label:"Maksud Perjalanan Dinas",value:d.maksud,onChange:function(v){set("maksud",v)}}))),
+    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Rencana Perjalanan Dinas"),
+    d.travelers.map(function(tr,i){return e("div",{key:i,style:{background:"var(--bg-surface)",padding:12,borderRadius:8,marginBottom:8}},
+      e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+        e("span",{style:{fontSize:12,fontWeight:600}},"Traveler #"+(i+1)),
+        d.travelers.length>1&&e("button",{className:"del-icon",onClick:function(){set("travelers",d.travelers.filter(function(_,j){return j!==i}))}},"\u2715")),
+      e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
+        ReqInput({label:"Nama",value:tr.nama,onChange:function(v){setTr(i,"nama",v)}}),
+        ReqInput({label:"NIK",value:tr.nik,onChange:function(v){setTr(i,"nik",v)}}),
+        ReqInput({label:"Jabatan / Golongan",value:tr.jabatan,onChange:function(v){setTr(i,"jabatan",v)}}),
+        ReqInput({label:"Tujuan",value:tr.tujuan,onChange:function(v){setTr(i,"tujuan",v)}}),
+        ReqInput({label:"Dari Tanggal",value:tr.dariTgl,onChange:function(v){setTr(i,"dariTgl",v)},type:"date"}),
+        ReqInput({label:"Sampai Tanggal",value:tr.sampaiTgl,onChange:function(v){setTr(i,"sampaiTgl",v)},type:"date"}),
+        ReqInput({label:"Alat Transportasi",value:tr.transport,onChange:function(v){setTr(i,"transport",v)}}),
+        ReqInput({label:"Keterangan",value:tr.ket,onChange:function(v){setTr(i,"ket",v)}})))}),
+    e("div",{style:{display:"flex",gap:8}},
+      e("button",{className:"btn btn-ghost",onClick:function(){set("travelers",d.travelers.concat([{nama:"",nik:"",jabatan:"",tujuan:"",dariTgl:"",sampaiTgl:"",transport:"",ket:""}]))}},"+  "+t("req_addTraveler")),
+      e("button",{className:"btn btn-primary",onClick:function(){_pv[1](true)}},t("req_preview"))));
+}
+
+// ── UHPD ──
+function ReqUHPD(p){
+  var _d=useState({nama:"Jemy Mustany",jabatan:"Head of Country Representative",dariTgl:"",sampaiTgl:"",tujuan:"",
+    pesawat:"",airportTax:"",kendaraan:"",taxi:"",tol:"",fuel:"",akomodasi:"",uhpd:"",entertainment:""});
+  var _pv=useState(false),d=_d[0],ref=useRef();
+  var set=function(k,v){_d[1](Object.assign({},d,((o={})[""+k]=v,o)));var o};
+  var ttrans=function(){return[d.pesawat,d.airportTax,d.kendaraan,d.taxi,d.tol,d.fuel].reduce(function(s,v){return s+(parseFloat(v)||0)},0)};
+  var gtotal=function(){return ttrans()+(parseFloat(d.akomodasi)||0)+(parseFloat(d.uhpd)||0)+(parseFloat(d.entertainment)||0)};
+
+  if(_pv[0])return e("div",null,
+    e("div",{style:{display:"flex",gap:8,marginBottom:16}},
+      e("button",{className:"btn btn-ghost",onClick:function(){_pv[1](false)}},"← "+t("req_backEdit")),
+      e("button",{className:"btn btn-success",onClick:function(){printPreview(ref,"UHPD - "+d.nama)}},"🖨️ "+t("req_print"))),
+    e("div",{ref:ref,style:{background:"#fff",padding:30,border:"1px solid #e5e7eb",borderRadius:8,maxWidth:780,color:"#000",fontFamily:"Arial,sans-serif",fontSize:11}},
+      e("div",{style:{textAlign:"center",marginBottom:8}},e("img",{src:SCCI_LOGO_B64,style:{height:50}}),
+        e("p",{style:{fontWeight:"bold",fontSize:12}},"PT. SURVEYOR CARBON CONSULTING INDONESIA")),
+      e("h3",{style:{textAlign:"center",fontWeight:"bold",fontSize:13,margin:"12px 0"}},"RENCANA BIAYA PERJALANAN DINAS"),
+      e("table",{style:{fontSize:11,marginBottom:12,borderCollapse:"collapse"}},e("tbody",null,
+        [["NAMA",d.nama],["JABATAN",d.jabatan],["TGL s/d TGL",fmtDateID(d.dariTgl)+" s.d "+fmtDateID(d.sampaiTgl)],["TUJUAN",d.tujuan]].map(function(r){return e("tr",{key:r[0]},e("td",{style:{width:100,border:"none"}},r[0]),e("td",{style:{border:"none"}},": "+r[1]))}))),
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11}},
+        e("thead",null,e("tr",{style:{background:"#f0f0f0"}},
+          e("th",{style:{border:"1px solid #000",padding:4,width:40}},"No."),
+          e("th",{style:{border:"1px solid #000",padding:4}},"Keterangan"),
+          e("th",{style:{border:"1px solid #000",padding:4,width:140}},"Total (Rp)"))),
+        e("tbody",null,
+          e("tr",null,e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},"1"),e("td",{style:{border:"1px solid #000",padding:4,fontWeight:"bold"}},"Transportasi"),e("td",{style:{border:"1px solid #000",padding:4}})),
+          ["a. Pesawat","b. Airport Tax","c. Kendaraan Umum","d. Taxi","e. Tol","f. Fuel"].map(function(l,i){var keys=["pesawat","airportTax","kendaraan","taxi","tol","fuel"];var v=d[keys[i]];return e("tr",{key:l},e("td",{style:{border:"1px solid #000",padding:4}}),e("td",{style:{border:"1px solid #000",padding:"2px 4px 2px 20px"}},l),e("td",{style:{border:"1px solid #000",padding:4,textAlign:"right"}},parseFloat(v)?fmtRp(v):""))}),
+          [["2","Akomodasi",d.akomodasi],["3","UHPD",d.uhpd],["4","Entertainment",d.entertainment]].map(function(r){return e("tr",{key:r[0]},e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},r[0]),e("td",{style:{border:"1px solid #000",padding:4}},r[1]),e("td",{style:{border:"1px solid #000",padding:4,textAlign:"right"}},parseFloat(r[2])?fmtRp(r[2]):""))}),
+          e("tr",{style:{fontWeight:"bold"}},e("td",{style:{border:"1px solid #000",padding:4},colSpan:2},"TOTAL"),e("td",{style:{border:"1px solid #000",padding:4,textAlign:"right"}},fmtRp(gtotal()))))),
+      e("div",{style:{display:"flex",justifyContent:"space-between",marginTop:40,fontSize:11}},
+        ["Diajukan,","Disetujui Atasan,","Disetujui,","Dibayar"].map(function(l){return e("div",{key:l,style:{textAlign:"center"}},
+          e("p",null,l),l==="Diajukan,"?e("img",{src:SCCI_SIG_B64,style:{height:35,margin:"6px 0"}}):e("div",{style:{height:50}}),
+          e("p",{style:{borderTop:"1px solid #000",paddingTop:4,minWidth:90}},l==="Diajukan,"?"Jemy Mustany":"________________"))}))));
+
+  return e("div",null,
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
+      ReqInput({label:"Nama",value:d.nama,onChange:function(v){set("nama",v)}}),
+      ReqInput({label:"Jabatan",value:d.jabatan,onChange:function(v){set("jabatan",v)}}),
+      ReqInput({label:"Dari Tanggal",value:d.dariTgl,onChange:function(v){set("dariTgl",v)},type:"date"}),
+      ReqInput({label:"Sampai Tanggal",value:d.sampaiTgl,onChange:function(v){set("sampaiTgl",v)},type:"date"}),
+      e("div",{style:{gridColumn:"1/-1"}},ReqInput({label:"Tujuan",value:d.tujuan,onChange:function(v){set("tujuan",v)}}))),
+    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Rencana Biaya"),
+    e("div",{style:{background:"var(--bg-surface)",padding:12,borderRadius:8,marginBottom:12}},
+      e("p",{style:{fontSize:12,fontWeight:600,marginBottom:8}},"1. Transportasi"),
+      e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,paddingLeft:16}},
+        ReqInput({label:"a. Pesawat (Rp)",value:d.pesawat,onChange:function(v){set("pesawat",v)},type:"number"}),
+        ReqInput({label:"b. Airport Tax (Rp)",value:d.airportTax,onChange:function(v){set("airportTax",v)},type:"number"}),
+        ReqInput({label:"c. Kendaraan Umum (Rp)",value:d.kendaraan,onChange:function(v){set("kendaraan",v)},type:"number"}),
+        ReqInput({label:"d. Taxi (Rp)",value:d.taxi,onChange:function(v){set("taxi",v)},type:"number"}),
+        ReqInput({label:"e. Tol (Rp)",value:d.tol,onChange:function(v){set("tol",v)},type:"number"}),
+        ReqInput({label:"f. Fuel (Rp)",value:d.fuel,onChange:function(v){set("fuel",v)},type:"number"}))),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}},
+      ReqInput({label:"2. Akomodasi (Rp)",value:d.akomodasi,onChange:function(v){set("akomodasi",v)},type:"number"}),
+      ReqInput({label:"3. UHPD (Rp)",value:d.uhpd,onChange:function(v){set("uhpd",v)},type:"number"}),
+      ReqInput({label:"4. Entertainment (Rp)",value:d.entertainment,onChange:function(v){set("entertainment",v)},type:"number"})),
+    e("p",{style:{fontSize:14,fontWeight:700,margin:"12px 0",color:"var(--accent)"}},"Total: Rp "+fmtRp(gtotal())),
+    e("button",{className:"btn btn-primary",onClick:function(){_pv[1](true)}},t("req_preview")));
+}
+
+// ── MOM ──
+function ReqMOM(p){
+  var _d=useState({title:"",date:todayISO(),time:"09:00",location:"Online Meeting",calledBy:"Jemy Mustany",notesBy:"Jemy Mustany",
+    participants:[{name:"Jemy Mustany",org:"SCCI",role:"Head of Country Representative"}],
+    agendas:[{desc:""}],feedback:[{person:"",text:""}],actions:[{pic:"",desc:""}]});
+  var _pv=useState(false),d=_d[0],ref=useRef();
+  var set=function(k,v){_d[1](Object.assign({},d,((o={})[""+k]=v,o)));var o};
+  var setArr=function(arr,i,k,v){var a=d[arr].slice();a[i]=Object.assign({},a[i],((o={})[""+k]=v,o));set(arr,a);var o};
+
+  if(_pv[0])return e("div",null,
+    e("div",{style:{display:"flex",gap:8,marginBottom:16}},
+      e("button",{className:"btn btn-ghost",onClick:function(){_pv[1](false)}},"← "+t("req_backEdit")),
+      e("button",{className:"btn btn-success",onClick:function(){printPreview(ref,"MOM - "+d.title)}},"🖨️ "+t("req_print"))),
+    e("div",{ref:ref,style:{background:"#fff",padding:30,border:"1px solid #e5e7eb",borderRadius:8,maxWidth:820,color:"#000",fontFamily:"Arial,sans-serif",fontSize:11,overflowX:"auto"}},
+      e("div",{style:{textAlign:"center",marginBottom:12}},e("img",{src:SCCI_LOGO_B64,style:{height:50}})),
+      e("h2",{style:{textAlign:"center",fontWeight:"bold",fontSize:14,margin:"8px 0 16px"}},"Minutes of Meeting (MOM)"),
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:16}},e("tbody",null,
+        [["Meeting title",d.title],["Date, Time",fmtDateID(d.date)+", at "+d.time],["Location",d.location],["Meeting called by",d.calledBy],["Notes by",d.notesBy]].map(function(r){return e("tr",{key:r[0]},e("td",{style:{border:"1px solid #000",padding:4,width:140,fontWeight:"bold",fontStyle:"italic"}},r[0]),e("td",{style:{border:"1px solid #000",padding:4}},r[1]))}))),
+      // Participants
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:16}},
+        e("thead",null,e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4},colSpan:4},"Meeting Participants")),
+          e("tr",{style:{background:"#f0f0f0"}},["Name","Organization","Role & Department","Signature"].map(function(h){return e("th",{key:h,style:{border:"1px solid #000",padding:4}},h)}))),
+        e("tbody",null,d.participants.map(function(pt,i){return e("tr",{key:i},
+          e("td",{style:{border:"1px solid #000",padding:4}},pt.name),e("td",{style:{border:"1px solid #000",padding:4}},pt.org),
+          e("td",{style:{border:"1px solid #000",padding:4}},pt.role),e("td",{style:{border:"1px solid #000",padding:4,width:80}}))}))),
+      // Agenda
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:16}},
+        e("thead",null,e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4},colSpan:2},"A. Meeting Agenda")),
+          e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4,width:40}},"No"),e("th",{style:{border:"1px solid #000",padding:4}},"Agenda Descriptions"))),
+        e("tbody",null,d.agendas.map(function(a,i){return e("tr",{key:i},e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},i+1),e("td",{style:{border:"1px solid #000",padding:4}},a.desc))}))),
+      // Feedback
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:16}},
+        e("thead",null,e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4},colSpan:3},"B. Meeting Feedback")),
+          e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4,width:40}},"No"),e("th",{style:{border:"1px solid #000",padding:4,width:120}},"Key Person"),e("th",{style:{border:"1px solid #000",padding:4}},"Feedback"))),
+        e("tbody",null,d.feedback.map(function(f,i){return e("tr",{key:i},e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},i+1),e("td",{style:{border:"1px solid #000",padding:4}},f.person),e("td",{style:{border:"1px solid #000",padding:4,whiteSpace:"pre-wrap"}},f.text))}))),
+      // Actions
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11}},
+        e("thead",null,e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4},colSpan:3},"C. Action Items")),
+          e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4,width:40}},"No"),e("th",{style:{border:"1px solid #000",padding:4,width:120}},"PIC"),e("th",{style:{border:"1px solid #000",padding:4}},"Actions Descriptions"))),
+        e("tbody",null,d.actions.map(function(a,i){return e("tr",{key:i},e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},i+1),e("td",{style:{border:"1px solid #000",padding:4}},a.pic),e("td",{style:{border:"1px solid #000",padding:4,whiteSpace:"pre-wrap"}},a.desc))}))),
+      e("div",{style:{marginTop:40,fontSize:11}},e("p",null,"Notes by,"),
+        e("img",{src:SCCI_SIG_B64,style:{height:35,margin:"6px 0"}}),
+        e("p",{style:{fontWeight:"bold"}},"Jemy Mustany"),e("p",null,"Head of Country Representative"))));
+
+  return e("div",null,
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
+      e("div",{style:{gridColumn:"1/-1"}},ReqInput({label:"Meeting Title",value:d.title,onChange:function(v){set("title",v)}})),
+      ReqInput({label:"Date",value:d.date,onChange:function(v){set("date",v)},type:"date"}),
+      ReqInput({label:"Time",value:d.time,onChange:function(v){set("time",v)},type:"time"}),
+      ReqInput({label:"Location",value:d.location,onChange:function(v){set("location",v)}}),
+      ReqInput({label:"Meeting Called By",value:d.calledBy,onChange:function(v){set("calledBy",v)}}),
+      ReqInput({label:"Notes By",value:d.notesBy,onChange:function(v){set("notesBy",v)}})),
+    // Participants
+    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Participants"),
+    d.participants.map(function(pt,i){return e("div",{key:i,style:{display:"grid",gridTemplateColumns:"2fr 1fr 2fr auto",gap:8,marginBottom:4,alignItems:"end"}},
+      ReqInput({label:i===0?"Name":"",value:pt.name,onChange:function(v){setArr("participants",i,"name",v)}}),
+      ReqInput({label:i===0?"Organization":"",value:pt.org,onChange:function(v){setArr("participants",i,"org",v)}}),
+      ReqInput({label:i===0?"Role & Department":"",value:pt.role,onChange:function(v){setArr("participants",i,"role",v)}}),
+      e("button",{className:"del-icon",style:{marginBottom:12},onClick:function(){if(d.participants.length>1)set("participants",d.participants.filter(function(_,j){return j!==i}))}},"\u2715"))}),
+    e("button",{className:"btn btn-ghost btn-sm",onClick:function(){set("participants",d.participants.concat([{name:"",org:"SCCI",role:""}]))},style:{marginBottom:16}},"+  "+t("req_addParticipant")),
+    // Agendas
+    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Agenda"),
+    d.agendas.map(function(a,i){return e("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr auto",gap:8,marginBottom:4,alignItems:"end"}},
+      ReqInput({label:i===0?"Description":"",value:a.desc,onChange:function(v){setArr("agendas",i,"desc",v)}}),
+      e("button",{className:"del-icon",style:{marginBottom:12},onClick:function(){if(d.agendas.length>1)set("agendas",d.agendas.filter(function(_,j){return j!==i}))}},"\u2715"))}),
+    e("button",{className:"btn btn-ghost btn-sm",onClick:function(){set("agendas",d.agendas.concat([{desc:""}]))},style:{marginBottom:16}},"+  "+t("req_addAgenda")),
+    // Feedback
+    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Meeting Feedback"),
+    d.feedback.map(function(f,i){return e("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 2fr auto",gap:8,marginBottom:4,alignItems:"end"}},
+      ReqInput({label:i===0?"Key Person":"",value:f.person,onChange:function(v){setArr("feedback",i,"person",v)}}),
+      ReqInput({label:i===0?"Feedback":"",value:f.text,onChange:function(v){setArr("feedback",i,"text",v)}}),
+      e("button",{className:"del-icon",style:{marginBottom:12},onClick:function(){if(d.feedback.length>1)set("feedback",d.feedback.filter(function(_,j){return j!==i}))}},"\u2715"))}),
+    e("button",{className:"btn btn-ghost btn-sm",onClick:function(){set("feedback",d.feedback.concat([{person:"",text:""}]))},style:{marginBottom:16}},"+  "+t("req_addFeedback")),
+    // Actions
+    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Action Items"),
+    d.actions.map(function(a,i){return e("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 2fr auto",gap:8,marginBottom:4,alignItems:"end"}},
+      ReqInput({label:i===0?"PIC":"",value:a.pic,onChange:function(v){setArr("actions",i,"pic",v)}}),
+      ReqInput({label:i===0?"Actions Description":"",value:a.desc,onChange:function(v){setArr("actions",i,"desc",v)}}),
+      e("button",{className:"del-icon",style:{marginBottom:12},onClick:function(){if(d.actions.length>1)set("actions",d.actions.filter(function(_,j){return j!==i}))}},"\u2715"))}),
+    e("div",{style:{display:"flex",gap:8}},
+      e("button",{className:"btn btn-ghost",onClick:function(){set("actions",d.actions.concat([{pic:"",desc:""}]))}},"+  "+t("req_addAction")),
+      e("button",{className:"btn btn-primary",onClick:function(){_pv[1](true)}},t("req_preview"))));
+}
+
+// ── Requests Page (main) ──
+var REQ_DOCS=[{id:"memo",icon:"📝",label:"req_memo"},{id:"fpb",icon:"📦",label:"req_fpb"},{id:"stpd",icon:"✈️",label:"req_stpd"},{id:"uhpd",icon:"💰",label:"req_uhpd"},{id:"mom",icon:"📋",label:"req_mom"}];
+function RequestsPage(p){
+  var _active=useState("memo"),active=_active[0];
+  var docTypes=REQ_DOCS;
+  return e("div",null,
+    e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:20}},
+      e("h2",{style:{fontSize:20,fontWeight:700,color:"var(--text-primary)",margin:0}},"📝 "+t("sb_requests")),
+      e("span",{style:{fontSize:12,color:"var(--text-tertiary)"}},"Document Generator")),
+    e("div",{style:{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap",borderBottom:"1px solid var(--border)",paddingBottom:4}},
+      docTypes.map(function(dt){return e("button",{key:dt.id,className:"tab-btn"+(active===dt.id?" tab-active":""),
+        onClick:function(){_active[1](dt.id)}},dt.icon+" "+t(dt.label))})),
+    e("div",{className:"card"},e("div",{className:"card-body"},
+      active==="memo"?e(ReqMemo)
+      :active==="fpb"?e(ReqFPB)
+      :active==="stpd"?e(ReqSTPD)
+      :active==="uhpd"?e(ReqUHPD)
+      :e(ReqMOM))));
+}
+
+
 function App(){
   // Session persistence via sessionStorage (survives refresh, clears on tab close)
   var savedSession=null;try{savedSession=JSON.parse(sessionStorage.getItem("scci_session"))}catch(x){}
@@ -6979,6 +7383,7 @@ function App(){
         !isGuest&&userMods.indexOf("workspace")>=0&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_digiExpand[1](!_digiExpand[0])},style:{fontWeight:600}},"\uD83D\uDE80"," Workspace ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_digiExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
         !isGuest&&userMods.indexOf("workspace")>=0&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="workspace"?" active":"")},e("button",{onClick:function(){_page[1]("workspace");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83D\uDD17"," Links")),
         !isGuest&&userMods.indexOf("workspace")>=0&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="tasks"?" active":"")},e("button",{onClick:function(){_page[1]("tasks");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\u2705"," Tasks")),
+        !isGuest&&userMods.indexOf("workspace")>=0&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="requests"?" active":"")},e("button",{onClick:function(){_page[1]("requests");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83D\uDCDD"," ",t("sb_requests"))),
         !isGuest&&userMods.indexOf("operations")>=0&&e("li",{className:"sidebar-item"+(page==="operations"?" active":"")},e("button",{onClick:function(){_page[1]("operations");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83C\uDFE2"," ",t("sb_operations"))),
         !isGuest&&userMods.indexOf("crm")>=0&&e("li",{className:"sidebar-item"+(page==="crm"?" active":"")},e("button",{onClick:function(){_page[1]("crm");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83D\uDCBC"," ",t("sb_crm"))),
         !isGuest&&(userMods.indexOf("crm")>=0||userRole==="admin")&&e("li",{className:"sidebar-item"+(page==="bd"?" active":"")},e("button",{onClick:function(){_page[1]("bd");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83C\uDF0D"," ",t("sb_bd"))),
@@ -7032,6 +7437,7 @@ function App(){
           :page==="operations"?e(OperationsPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userRole:userRole,projects:_allProjects[0]})
           :page==="workspace"?e(WorkspacePage,{userName:userName})
           :page==="tasks"?e(TasksPage,{userName:userName,tasksByPIC:_tasksByPIC[0]})
+          :page==="requests"?e(RequestsPage,{userName:userName,userRole:userRole})
           :page==="announcements"?e(AnnouncementsPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userName:userName})
           :page==="directory"?(userRole==="external"?null:e(EmployeeDirectory))
           :page==="portfolio-log"?e(PortfolioLog)
