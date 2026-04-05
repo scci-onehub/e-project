@@ -695,7 +695,7 @@ function LoginModal(p){
     apiGet("auth",{user:_u[0],pass:_p2[0]}).then(function(d){
       if(d.ok){
         if(d.mustChangePassword){p.onForceChange(d);return}
-        p.onLogin(d.role||"bod",d.name||_u[0],d.assignedProjects||"",d.photo||"",d.allowedModules||"");if(p.onClose)p.onClose()
+        p.onLogin(d.role||"bod",d.name||_u[0],d.assignedProjects||"",d.photo||"",d.allowedModules||"",_u[0]);if(p.onClose)p.onClose()
       }else _err[1]("Invalid credentials")
     }).catch(function(){_err[1]("Connection error")}).finally(function(){_loading[1](false)})
   }
@@ -1615,11 +1615,11 @@ function ExternalCheckpointView(p){
   return e("div",{style:{animation:"fadeIn .3s"}},
     // Top bar: Back + Format toggle + Print
     e("div",{className:"no-print",style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
-      e("a",{href:"#",onClick:function(ev){ev.preventDefault();onBack()},style:{color:"#487FFF",textDecoration:"none",fontSize:13,fontWeight:500}},"\u2190 Back"),
+      p.hideBack?e("div",null):e("a",{href:"#",onClick:function(ev){ev.preventDefault();onBack()},style:{color:"#487FFF",textDecoration:"none",fontSize:13,fontWeight:500}},"\u2190 Back"),
       e("div",{style:{display:"flex",gap:6,alignItems:"center"}},
         e("div",{style:{display:"flex",gap:0,border:"1px solid var(--border)",borderRadius:6,overflow:"hidden"}},
-          e("button",{style:{padding:"5px 14px",fontSize:11,fontWeight:_format[0]==="checkpoint"?700:400,background:_format[0]==="checkpoint"?"#487FFF":"transparent",color:_format[0]==="checkpoint"?"#fff":"var(--text-secondary)",border:"none",cursor:"pointer",fontFamily:"inherit"},onClick:function(){_format[1]("checkpoint")}},"Check Point"),
-          e("button",{style:{padding:"5px 14px",fontSize:11,fontWeight:_format[0]==="transformasi"?700:400,background:_format[0]==="transformasi"?"#1E3A5F":"transparent",color:_format[0]==="transformasi"?"#fff":"var(--text-secondary)",border:"none",cursor:"pointer",fontFamily:"inherit"},onClick:function(){_format[1]("transformasi")}},"Transformasi")),
+          e("button",{style:{padding:"5px 14px",fontSize:11,fontWeight:_format[0]==="checkpoint"?700:400,background:_format[0]==="checkpoint"?"#487FFF":"transparent",color:_format[0]==="checkpoint"?"#fff":"var(--text-secondary)",border:"none",cursor:"pointer",fontFamily:"inherit"},onClick:function(){_format[1]("checkpoint")}},"Surveyor Indonesia"),
+          e("button",{style:{padding:"5px 14px",fontSize:11,fontWeight:_format[0]==="transformasi"?700:400,background:_format[0]==="transformasi"?"#1E3A5F":"transparent",color:_format[0]==="transformasi"?"#fff":"var(--text-secondary)",border:"none",cursor:"pointer",fontFamily:"inherit"},onClick:function(){_format[1]("transformasi")}},"IDSurvey")),
         e("button",{className:"btn btn-ghost btn-sm",style:{fontSize:11},onClick:function(){window.print()}},"Print / PDF"))),
 
     // Render based on selected format
@@ -1629,9 +1629,11 @@ function ExternalCheckpointView(p){
     // Header
     e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}},
       e("div",null,
-        e("h2",{style:{fontSize:20,fontWeight:800,color:"var(--text-primary)"}},"CHECK POINT ",e("span",{style:{color:"#487FFF"}},proj.name.toUpperCase())),
+        e("h2",{style:{fontSize:20,fontWeight:800,color:"var(--text-primary)"}},"SURVEYOR INDONESIA ",e("span",{style:{color:"#487FFF"}},proj.name.toUpperCase())),
         e("p",{style:{fontSize:12,color:"var(--text-tertiary)",marginTop:4}},"PT Surveyor Carbon Consulting Indonesia")),
-      e("div",{style:{background:"var(--bg-surface)",border:"1px solid var(--border)",borderRadius:8,padding:"6px 14px",fontSize:11,color:"var(--text-secondary)",fontWeight:600,whiteSpace:"nowrap"}},"Update as of "+new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}))),
+      e("div",{style:{display:"flex",flexDirection:"column",gap:8,alignItems:"flex-end"}},
+        e("div",{style:{background:"var(--bg-surface)",border:"1px solid var(--border)",borderRadius:8,padding:"6px 14px",fontSize:11,color:"var(--text-secondary)",fontWeight:600,whiteSpace:"nowrap"}},"Update as of "+new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})),
+        p.onFeedback&&e("button",{className:"btn btn-ghost",style:{fontSize:12,border:"1px solid var(--accent)",color:"var(--accent)"},onClick:p.onFeedback},"\uD83D\uDCDD Feedback Form"))),
 
     // Row 1: Overview + Activities + Actions/Risks
     e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:14,marginBottom:16}},
@@ -6452,8 +6454,8 @@ function PortfolioLog(p){
   var dates=Object.keys(byDate).sort().reverse();
 
   // Action colors
-  var actC={addProject:"#45B369",updateProject:"#487FFF",addTask:"#45B369",updateTask:"#487FFF",deleteTask:"#EF4A00",approveTask:"#45B369",rejectTask:"#EF4A00",submitForReview:"#8B5CF6",addRisk:"#FF9F29",addBudgetItem:"#487FFF",addRealization:"#45B369",addRegister:"#FF9F29",addStakeholder:"#8B5CF6",addResource:"#45B369",userLogin:"#6B7280",userLogout:"#6B7280",addCRMClient:"#45B369",addCRMDeal:"#487FFF",addAnnouncement:"#FF9F29"};
-  var actIc={addProject:"",updateProject:"\u270F\uFE0F",addTask:"\u2795",updateTask:"\uD83D\uDD04",deleteTask:"\u274C",approveTask:"\u2705",rejectTask:"\u26D4",submitForReview:"\uD83D\uDCE4",addRisk:"\u26A0\uFE0F",addBudgetItem:"\uD83D\uDCB0",addRealization:"\uD83D\uDCB8",addRegister:"\uD83D\uDCCB",addStakeholder:"\uD83D\uDC64",addResource:"\uD83D\uDCE6",userLogin:"\uD83D\uDD13",userLogout:"\u23FB",addCRMClient:"\uD83D\uDC65",addCRMDeal:"\uD83D\uDCBC",addAnnouncement:"\uD83D\uDCE2"};
+  var actC={addProject:"#45B369",updateProject:"#487FFF",addTask:"#45B369",updateTask:"#487FFF",deleteTask:"#EF4A00",approveTask:"#45B369",rejectTask:"#EF4A00",submitForReview:"#8B5CF6",addRisk:"#FF9F29",addBudgetItem:"#487FFF",addRealization:"#45B369",addRegister:"#FF9F29",addStakeholder:"#8B5CF6",addResource:"#45B369",userLogin:"#6B7280",userLogout:"#6B7280",addCRMClient:"#45B369",addCRMDeal:"#487FFF",addAnnouncement:"#FF9F29",guestLogin:"#8B5CF6",guestLogout:"#8B5CF6",guestFeedback:"#1CD4C6"};
+  var actIc={addProject:"",updateProject:"\u270F\uFE0F",addTask:"\u2795",updateTask:"\uD83D\uDD04",deleteTask:"\u274C",approveTask:"\u2705",rejectTask:"\u26D4",submitForReview:"\uD83D\uDCE4",addRisk:"\u26A0\uFE0F",addBudgetItem:"\uD83D\uDCB0",addRealization:"\uD83D\uDCB8",addRegister:"\uD83D\uDCCB",addStakeholder:"\uD83D\uDC64",addResource:"\uD83D\uDCE6",userLogin:"\uD83D\uDD13",userLogout:"\u23FB",addCRMClient:"\uD83D\uDC65",addCRMDeal:"\uD83D\uDCBC",addAnnouncement:"\uD83D\uDCE2",guestLogin:"\uD83D\uDC4B",guestLogout:"\uD83D\uDC4B",guestFeedback:"\uD83D\uDCDD"};
 
   if(_loading[0])return e(Spinner);
 
@@ -6797,6 +6799,31 @@ function printPreview(ref,title){
   w.document.close();w.print();
 }
 
+// ── Rich Text Editor ──
+function RichTextEditor(p){
+  var editorRef=useRef();
+  var _init=useState(false);
+  useEffect(function(){if(editorRef.current&&p.value&&!_init[0]){editorRef.current.innerHTML=p.value;_init[1](true)}},[p.value]);
+  function exec(cmd,val){document.execCommand(cmd,false,val||null);if(editorRef.current&&p.onChange)p.onChange(editorRef.current.innerHTML)}
+  var tbtn={padding:"4px 8px",background:"var(--bg-surface)",border:"1px solid var(--border)",borderRadius:4,cursor:"pointer",fontSize:13,fontFamily:"inherit",color:"var(--text-primary)",minWidth:30};
+  return e("div",{style:{marginBottom:12}},
+    p.label&&e("label",{className:"label"},p.label),
+    e("div",{style:{display:"flex",gap:4,padding:"6px 8px",background:"var(--bg-surface)",borderRadius:"8px 8px 0 0",border:"1px solid var(--border)",borderBottom:"none",flexWrap:"wrap"}},
+      e("button",{style:Object.assign({},tbtn,{fontWeight:"bold"}),onClick:function(){exec("bold")},title:"Bold"},"B"),
+      e("button",{style:Object.assign({},tbtn,{fontStyle:"italic"}),onClick:function(){exec("italic")},title:"Italic"},"I"),
+      e("button",{style:Object.assign({},tbtn,{textDecoration:"underline"}),onClick:function(){exec("underline")},title:"Underline"},"U"),
+      e("span",{style:{width:1,background:"var(--border)",margin:"0 4px"}}),
+      e("button",{style:tbtn,onClick:function(){exec("insertOrderedList")},title:"Numbered List"},"1."),
+      e("button",{style:tbtn,onClick:function(){exec("insertUnorderedList")},title:"Bullet List"},"\u2022"),
+      e("span",{style:{width:1,background:"var(--border)",margin:"0 4px"}}),
+      e("button",{style:tbtn,onClick:function(){exec("justifyLeft")},title:"Align Left"},"\u25E7"),
+      e("button",{style:tbtn,onClick:function(){exec("justifyCenter")},title:"Align Center"},"\u25EB"),
+      e("button",{style:tbtn,onClick:function(){exec("justifyFull")},title:"Justify"},"\u25A3")),
+    e("div",{ref:editorRef,contentEditable:true,
+      onInput:function(){if(editorRef.current&&p.onChange)p.onChange(editorRef.current.innerHTML)},
+      style:{minHeight:200,padding:"12px 14px",border:"1px solid var(--border)",borderRadius:"0 0 8px 8px",fontFamily:"inherit",fontSize:13,lineHeight:1.6,outline:"none",background:"var(--bg-input)",color:"var(--text-primary)",overflowY:"auto"}}))
+}
+
 // ── MEMO ──
 var MEMO_TEMPLATES={
   apostille:{label:"Apostille / Legalization",body:function(d){return"Sehubungan dengan "+d.perihal+", bersama ini kami sampaikan permintaan kepada "+d.kepada+" untuk memproses legalisasi dokumen melalui mekanisme apostille atas dokumen-dokumen yang dipersyaratkan.\n\nAdapun dokumen-dokumen terkait akan disampaikan secara terpisah. Kami mohon agar dapat:\n\n1. Melakukan verifikasi final daftar dokumen yang wajib diapostille;\n2. Mengkoordinasikan proses notarisasi (jika diperlukan) sebelum apostille;\n3. Mengurus proses apostille melalui instansi berwenang;\n4. Memberikan estimasi waktu penyelesaian serta estimasi biaya;\n5. Menginformasikan apabila terdapat dokumen tambahan atau persyaratan khusus.\n\nDemikian disampaikan. Atas kerja sama dan dukungan, kami ucapkan terima kasih."}},
@@ -6838,7 +6865,7 @@ function ReqMemo(p){
       e("table",{style:{width:"100%",marginBottom:20,fontSize:13,borderCollapse:"collapse"}},e("tbody",null,
         [["Kepada",d.kepada],["Dari",d.dari],["Perihal",d.perihal],["Nomor",d.nomor],["Tanggal",fmtDateID(d.tanggal)],["Lampiran",d.lampiran]].map(function(r){return e("tr",{key:r[0]},e("td",{style:{width:100,fontWeight:"bold",verticalAlign:"top",padding:"2px 0",border:"none"}},r[0]),e("td",{style:{width:10,border:"none"}},":"),e("td",{style:{padding:"2px 0",border:"none"}},r[1]))}))),
       e("hr",{style:{border:"1px solid #000",marginBottom:16}}),
-      e("div",{style:{whiteSpace:"pre-wrap",textAlign:"justify"}},d.body),
+      e("div",{style:{textAlign:"justify"},dangerouslySetInnerHTML:{__html:d.body||""}}),
       e("div",{style:{marginTop:40}},
         e("p",null,"Hormat kami,"),
         e("img",{src:SCCI_SIG_B64,style:{height:50,margin:"8px 0"}}),
@@ -6873,7 +6900,7 @@ function ReqMemo(p){
         e("div",{style:{display:"flex",gap:8,alignItems:"center"}},
           e("button",{className:"btn btn-primary",onClick:generateDraft,disabled:!d.perihal},"\u2728 Generate Draft"),
           !d.perihal&&e("span",{style:{fontSize:11,color:"#EF4A00"}},"Fill in Perihal first")))),
-    ReqTextArea({label:"Isi Memorandum",value:d.body,onChange:function(v){set("body",v)},rows:10}),
+    e(RichTextEditor,{label:"Isi Memorandum",value:d.body,onChange:function(v){set("body",v)}}),
     e("button",{className:"btn btn-primary",onClick:function(){_pv[1](true)}},t("req_preview")));
 }
 
@@ -7010,37 +7037,64 @@ function ReqSTPD(p){
 
 // ── UHPD ──
 function ReqUHPD(p){
-  var _d=useState({nama:"Jemy Mustany",jabatan:"Head of Country Representative",dariTgl:"",sampaiTgl:"",tujuan:"",
-    pesawat:"",airportTax:"",kendaraan:"",taxi:"",tol:"",fuel:"",akomodasi:"",uhpd:"",entertainment:""});
+  var _d=useState({nama:"Jemy Mustany",jabatan:"Head of Country Representative",dariTgl:"",sampaiTgl:"",tujuan:"",tglPlan:todayISO(),tglReal:"",lokasiPlan:"Manila",lokasiReal:"Jakarta",
+    pesawat:"",airportTax:"",kendaraan:"",taxi:"",tol:"",fuel:"",akomodasi:"",uhpd:"",entertainment:"",
+    realItems:[{keterangan:"",total:""}]});
   var _pv=useState(false),d=_d[0],ref=useRef();
   var set=function(k,v){_d[1](Object.assign({},d,((o={})[""+k]=v,o)));var o};
-  var ttrans=function(){return[d.pesawat,d.airportTax,d.kendaraan,d.taxi,d.tol,d.fuel].reduce(function(s,v){return s+(parseFloat(v)||0)},0)};
-  var gtotal=function(){return ttrans()+(parseFloat(d.akomodasi)||0)+(parseFloat(d.uhpd)||0)+(parseFloat(d.entertainment)||0)};
+  var setRI=function(i,k,v){var arr=d.realItems.slice();arr[i]=Object.assign({},arr[i],((o={})[""+k]=v,o));set("realItems",arr);var o};
+  var gtotal=function(){return[d.pesawat,d.airportTax,d.kendaraan,d.taxi,d.tol,d.fuel,d.akomodasi,d.uhpd,d.entertainment].reduce(function(s,v){return s+(parseFloat(v)||0)},0)};
+  var realTotal=function(){return d.realItems.reduce(function(s,it){return s+(parseFloat(it.total)||0)},0)};
+  var bs={border:"1px solid #000",padding:4};var bsn={border:"none"};
 
   if(_pv[0])return e("div",null,
     e("div",{style:{display:"flex",gap:8,marginBottom:16}},
       e("button",{className:"btn btn-ghost",onClick:function(){_pv[1](false)}},"← "+t("req_backEdit")),
       e("button",{className:"btn btn-success",onClick:function(){printPreview(ref,"UHPD - "+d.nama)}},"🖨️ "+t("req_print"))),
-    e("div",{ref:ref,style:{background:"#fff",padding:30,border:"1px solid #e5e7eb",borderRadius:8,maxWidth:780,color:"#000",fontFamily:"Arial,sans-serif",fontSize:11}},
-      e("div",{style:{textAlign:"center",marginBottom:8}},e("img",{src:SCCI_LOGO_B64,style:{height:50}}),
-        e("p",{style:{fontWeight:"bold",fontSize:12}},"PT. SURVEYOR CARBON CONSULTING INDONESIA")),
-      e("h3",{style:{textAlign:"center",fontWeight:"bold",fontSize:13,margin:"12px 0"}},"RENCANA BIAYA PERJALANAN DINAS"),
-      e("table",{style:{fontSize:11,marginBottom:12,borderCollapse:"collapse"}},e("tbody",null,
-        [["NAMA",d.nama],["JABATAN",d.jabatan],["TGL s/d TGL",fmtDateID(d.dariTgl)+" s.d "+fmtDateID(d.sampaiTgl)],["TUJUAN",d.tujuan]].map(function(r){return e("tr",{key:r[0]},e("td",{style:{width:100,border:"none"}},r[0]),e("td",{style:{border:"none"}},": "+r[1]))}))),
-      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11}},
-        e("thead",null,e("tr",{style:{background:"#f0f0f0"}},
-          e("th",{style:{border:"1px solid #000",padding:4,width:40}},"No."),
-          e("th",{style:{border:"1px solid #000",padding:4}},"Keterangan"),
-          e("th",{style:{border:"1px solid #000",padding:4,width:140}},"Total (Rp)"))),
-        e("tbody",null,
-          e("tr",null,e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},"1"),e("td",{style:{border:"1px solid #000",padding:4,fontWeight:"bold"}},"Transportasi"),e("td",{style:{border:"1px solid #000",padding:4}})),
-          ["a. Pesawat","b. Airport Tax","c. Kendaraan Umum","d. Taxi","e. Tol","f. Fuel"].map(function(l,i){var keys=["pesawat","airportTax","kendaraan","taxi","tol","fuel"];var v=d[keys[i]];return e("tr",{key:l},e("td",{style:{border:"1px solid #000",padding:4}}),e("td",{style:{border:"1px solid #000",padding:"2px 4px 2px 20px"}},l),e("td",{style:{border:"1px solid #000",padding:4,textAlign:"right"}},parseFloat(v)?fmtRp(v):""))}),
-          [["2","Akomodasi",d.akomodasi],["3","UHPD",d.uhpd],["4","Entertainment",d.entertainment]].map(function(r){return e("tr",{key:r[0]},e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},r[0]),e("td",{style:{border:"1px solid #000",padding:4}},r[1]),e("td",{style:{border:"1px solid #000",padding:4,textAlign:"right"}},parseFloat(r[2])?fmtRp(r[2]):""))}),
-          e("tr",{style:{fontWeight:"bold"}},e("td",{style:{border:"1px solid #000",padding:4},colSpan:2},"TOTAL"),e("td",{style:{border:"1px solid #000",padding:4,textAlign:"right"}},fmtRp(gtotal()))))),
-      e("div",{style:{display:"flex",justifyContent:"space-between",marginTop:40,fontSize:11}},
-        ["Diajukan,","Disetujui Atasan,","Disetujui,","Dibayar"].map(function(l){return e("div",{key:l,style:{textAlign:"center"}},
-          e("p",null,l),l==="Diajukan,"?e("img",{src:SCCI_SIG_B64,style:{height:35,margin:"6px 0"}}):e("div",{style:{height:50}}),
-          e("p",{style:{borderTop:"1px solid #000",paddingTop:4,minWidth:90}},l==="Diajukan,"?"Jemy Mustany":"________________"))}))));
+    e("div",{ref:ref,style:{background:"#fff",padding:20,border:"1px solid #e5e7eb",borderRadius:8,color:"#000",fontFamily:"Arial,sans-serif",fontSize:10,overflowX:"auto"}},
+      // Side-by-side: Plan | Realization
+      e("div",{style:{display:"flex",gap:24,minWidth:900}},
+        // ── LEFT: UANG MUKA (Plan) ──
+        e("div",{style:{flex:1}},
+          e("div",{style:{marginBottom:8}},e("img",{src:SCCI_LOGO_B64,style:{height:40}})),
+          e("h3",{style:{textAlign:"center",fontWeight:"bold",fontSize:12,margin:"8px 0 12px"}},"UANG MUKA"),
+          e("table",{style:{fontSize:10,marginBottom:10,borderCollapse:"collapse"}},e("tbody",null,
+            [["NAMA",d.nama],["JABATAN",d.jabatan],["TGL s/d TGL",fmtDateID(d.dariTgl)],["TUJUAN",d.tujuan]].map(function(r){return e("tr",{key:r[0]},e("td",{style:Object.assign({width:80},bsn)},r[0]),e("td",{style:bsn},": "+r[1]))}))),
+          e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:10}},
+            e("thead",null,e("tr",{style:{background:"#f0f0f0"}},e("th",{style:bs,colSpan:3},"RENCANA BIAYA")),
+              e("tr",{style:{background:"#f0f0f0"}},e("th",{style:Object.assign({width:30},bs)},"No."),e("th",{style:bs},"Keterangan"),e("th",{style:Object.assign({width:100},bs)},"Total (Rp)"))),
+            e("tbody",null,
+              e("tr",null,e("td",{style:Object.assign({textAlign:"center"},bs)},"1"),e("td",{style:Object.assign({fontWeight:"bold"},bs)},"Transportasi"),e("td",{style:bs})),
+              ["a. Pesawat","b. Airport Tax","c. Kendaraan Umum","d. Taxi","e. Tol","f. Fuel"].map(function(l,i){var keys=["pesawat","airportTax","kendaraan","taxi","tol","fuel"];var v=d[keys[i]];
+                return e("tr",{key:l},e("td",{style:bs}),e("td",{style:Object.assign({paddingLeft:16},bs)},l),e("td",{style:Object.assign({textAlign:"right"},bs)},parseFloat(v)?fmtRp(v):""))}),
+              [["2","Akomodasi",d.akomodasi],["3","UHPD",d.uhpd],["4","Entertainment",d.entertainment]].map(function(r){return e("tr",{key:r[0]},e("td",{style:Object.assign({textAlign:"center"},bs)},r[0]),e("td",{style:bs},r[1]),e("td",{style:Object.assign({textAlign:"right"},bs)},parseFloat(r[2])?fmtRp(r[2]):""))}),
+              e("tr",{style:{fontWeight:"bold"}},e("td",{style:bs,colSpan:2},"TOTAL"),e("td",{style:Object.assign({textAlign:"right"},bs)},fmtRp(gtotal()))))),
+          e("p",{style:{marginTop:20,fontSize:10}},d.lokasiPlan+", "+fmtDateID(d.tglPlan)),
+          e("div",{style:{display:"flex",justifyContent:"space-between",marginTop:12,fontSize:10}},
+            ["Diajukan,","Disetujui Atasan,","Disetujui,","Dibayar"].map(function(l){return e("div",{key:l,style:{textAlign:"center"}},e("p",null,l),
+              l==="Diajukan,"?e("img",{src:SCCI_SIG_B64,style:{height:30,margin:"4px 0"}}):e("div",{style:{height:40}}),
+              e("p",{style:{borderTop:"1px solid #000",paddingTop:2,minWidth:60,fontSize:9}},l==="Diajukan,"?"Jemy Mustany":"________"))}))),
+        // ── RIGHT: REALISASI UANG MUKA ──
+        e("div",{style:{flex:1}},
+          e("div",{style:{marginBottom:8}},e("img",{src:SCCI_LOGO_B64,style:{height:40}})),
+          e("h3",{style:{textAlign:"center",fontWeight:"bold",fontSize:12,margin:"8px 0 12px"}},"REALISASI UANG MUKA"),
+          e("table",{style:{fontSize:10,marginBottom:10,borderCollapse:"collapse"}},e("tbody",null,
+            [["NAMA",d.nama],["JABATAN",d.jabatan],["TGL s/d TGL",fmtDateID(d.dariTgl)],["TUJUAN",d.tujuan]].map(function(r){return e("tr",{key:"r"+r[0]},e("td",{style:Object.assign({width:80},bsn)},r[0]),e("td",{style:bsn},": "+r[1]))}))),
+          e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:10}},
+            e("thead",null,e("tr",{style:{background:"#f0f0f0"}},e("th",{style:bs,colSpan:3},"REALISASI BIAYA")),
+              e("tr",{style:{background:"#f0f0f0"}},e("th",{style:Object.assign({width:30},bs)},"No."),e("th",{style:bs},"Keterangan"),e("th",{style:Object.assign({width:100},bs)},"Total (Rp)"))),
+            e("tbody",null,
+              d.realItems.map(function(it,i){return e("tr",{key:i},
+                e("td",{style:Object.assign({textAlign:"center"},bs)},it.keterangan?i+1:""),
+                e("td",{style:bs},it.keterangan),
+                e("td",{style:Object.assign({textAlign:"right"},bs)},parseFloat(it.total)?fmtRp(it.total):""))}),
+              // Empty rows to fill space
+              [0,1,2,3,4,5].slice(d.realItems.length).map(function(i){return e("tr",{key:"e"+i},e("td",{style:bs},"\u00A0"),e("td",{style:bs}),e("td",{style:bs}))}),
+              e("tr",{style:{fontWeight:"bold"}},e("td",{style:bs,colSpan:2},"TOTAL"),e("td",{style:Object.assign({textAlign:"right"},bs)},fmtRp(realTotal()))))),
+          e("p",{style:{marginTop:20,fontSize:10}},d.lokasiReal+", "+fmtDateID(d.tglReal)),
+          e("div",{style:{display:"flex",justifyContent:"space-between",marginTop:12,fontSize:10}},
+            ["Diajukan,","Disetujui Atasan,","Disetujui,","Dibayar/Diterima"].map(function(l){return e("div",{key:l,style:{textAlign:"center"}},e("p",null,l),e("div",{style:{height:40}}),
+              e("p",{style:{borderTop:"1px solid #000",paddingTop:2,minWidth:60,fontSize:9}},"________"))}))))));
 
   return e("div",null,
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
@@ -7049,7 +7103,11 @@ function ReqUHPD(p){
       ReqInput({label:"Dari Tanggal",value:d.dariTgl,onChange:function(v){set("dariTgl",v)},type:"date"}),
       ReqInput({label:"Sampai Tanggal",value:d.sampaiTgl,onChange:function(v){set("sampaiTgl",v)},type:"date"}),
       e("div",{style:{gridColumn:"1/-1"}},ReqInput({label:"Tujuan",value:d.tujuan,onChange:function(v){set("tujuan",v)}}))),
-    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Rencana Biaya"),
+    // ── Plan section ──
+    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Rencana Biaya (Uang Muka)"),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      ReqInput({label:"Lokasi Plan",value:d.lokasiPlan,onChange:function(v){set("lokasiPlan",v)}}),
+      ReqInput({label:"Tanggal Plan",value:d.tglPlan,onChange:function(v){set("tglPlan",v)},type:"date"})),
     e("div",{style:{background:"var(--bg-surface)",padding:12,borderRadius:8,marginBottom:12}},
       e("p",{style:{fontSize:12,fontWeight:600,marginBottom:8}},"1. Transportasi"),
       e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,paddingLeft:16}},
@@ -7063,8 +7121,20 @@ function ReqUHPD(p){
       ReqInput({label:"2. Akomodasi (Rp)",value:d.akomodasi,onChange:function(v){set("akomodasi",v)},type:"number"}),
       ReqInput({label:"3. UHPD (Rp)",value:d.uhpd,onChange:function(v){set("uhpd",v)},type:"number"}),
       ReqInput({label:"4. Entertainment (Rp)",value:d.entertainment,onChange:function(v){set("entertainment",v)},type:"number"})),
-    e("p",{style:{fontSize:14,fontWeight:700,margin:"12px 0",color:"var(--accent)"}},"Total: Rp "+fmtRp(gtotal())),
-    e("button",{className:"btn btn-primary",onClick:function(){_pv[1](true)}},t("req_preview")));
+    e("p",{style:{fontSize:14,fontWeight:700,margin:"12px 0",color:"var(--accent)"}},"Plan Total: Rp "+fmtRp(gtotal())),
+    // ── Realization section ──
+    e("h4",{style:{fontSize:13,fontWeight:600,margin:"16px 0 8px"}},"Realisasi Biaya"),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      ReqInput({label:"Lokasi Realisasi",value:d.lokasiReal,onChange:function(v){set("lokasiReal",v)}}),
+      ReqInput({label:"Tanggal Realisasi",value:d.tglReal,onChange:function(v){set("tglReal",v)},type:"date"})),
+    d.realItems.map(function(it,i){return e("div",{key:i,style:{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:8,marginBottom:4,alignItems:"end"}},
+      ReqInput({label:i===0?"Keterangan":"",value:it.keterangan,onChange:function(v){setRI(i,"keterangan",v)}}),
+      ReqInput({label:i===0?"Total (Rp)":"",value:it.total,onChange:function(v){setRI(i,"total",v)},type:"number"}),
+      e("button",{className:"del-icon",style:{marginBottom:12},onClick:function(){if(d.realItems.length>1)set("realItems",d.realItems.filter(function(_,j){return j!==i}))}},"\u2715"))}),
+    e("p",{style:{fontSize:14,fontWeight:700,margin:"4px 0 12px",color:"#45B369"}},"Realization Total: Rp "+fmtRp(realTotal())),
+    e("div",{style:{display:"flex",gap:8}},
+      e("button",{className:"btn btn-ghost",onClick:function(){set("realItems",d.realItems.concat([{keterangan:"",total:""}]))}},"+  Add Realization Item"),
+      e("button",{className:"btn btn-primary",onClick:function(){_pv[1](true)}},t("req_preview"))));
 }
 
 // ── MOM ──
@@ -7081,7 +7151,7 @@ function ReqMOM(p){
       e("button",{className:"btn btn-ghost",onClick:function(){_pv[1](false)}},"← "+t("req_backEdit")),
       e("button",{className:"btn btn-success",onClick:function(){printPreview(ref,"MOM - "+d.title)}},"🖨️ "+t("req_print"))),
     e("div",{ref:ref,style:{background:"#fff",padding:30,border:"1px solid #e5e7eb",borderRadius:8,maxWidth:820,color:"#000",fontFamily:"Arial,sans-serif",fontSize:11,overflowX:"auto"}},
-      e("div",{style:{textAlign:"center",marginBottom:12}},e("img",{src:SCCI_LOGO_B64,style:{height:50}})),
+      e("div",{style:{marginBottom:12}},e("img",{src:SCCI_LOGO_B64,style:{height:50}})),
       e("h2",{style:{textAlign:"center",fontWeight:"bold",fontSize:14,margin:"8px 0 16px"}},"Minutes of Meeting (MOM)"),
       e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:16}},e("tbody",null,
         [["Meeting title",d.title],["Date, Time",fmtDateID(d.date)+", at "+d.time],["Location",d.location],["Meeting called by",d.calledBy],["Notes by",d.notesBy]].map(function(r){return e("tr",{key:r[0]},e("td",{style:{border:"1px solid #000",padding:4,width:140,fontWeight:"bold",fontStyle:"italic"}},r[0]),e("td",{style:{border:"1px solid #000",padding:4}},r[1]))}))),
@@ -7106,10 +7176,7 @@ function ReqMOM(p){
       e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11}},
         e("thead",null,e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4},colSpan:3},"C. Action Items")),
           e("tr",{style:{background:"#f0f0f0"}},e("th",{style:{border:"1px solid #000",padding:4,width:40}},"No"),e("th",{style:{border:"1px solid #000",padding:4,width:120}},"PIC"),e("th",{style:{border:"1px solid #000",padding:4}},"Actions Descriptions"))),
-        e("tbody",null,d.actions.map(function(a,i){return e("tr",{key:i},e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},i+1),e("td",{style:{border:"1px solid #000",padding:4}},a.pic),e("td",{style:{border:"1px solid #000",padding:4,whiteSpace:"pre-wrap"}},a.desc))}))),
-      e("div",{style:{marginTop:40,fontSize:11}},e("p",null,"Notes by,"),
-        e("img",{src:SCCI_SIG_B64,style:{height:35,margin:"6px 0"}}),
-        e("p",{style:{fontWeight:"bold"}},"Jemy Mustany"),e("p",null,"Head of Country Representative"))));
+        e("tbody",null,d.actions.map(function(a,i){return e("tr",{key:i},e("td",{style:{border:"1px solid #000",padding:4,textAlign:"center"}},i+1),e("td",{style:{border:"1px solid #000",padding:4}},a.pic),e("td",{style:{border:"1px solid #000",padding:4,whiteSpace:"pre-wrap"}},a.desc))})))));
 
   return e("div",null,
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
@@ -7155,20 +7222,168 @@ function ReqMOM(p){
 var REQ_DOCS=[{id:"memo",icon:"📝",label:"req_memo"},{id:"fpb",icon:"📦",label:"req_fpb"},{id:"stpd",icon:"✈️",label:"req_stpd"},{id:"uhpd",icon:"💰",label:"req_uhpd"},{id:"mom",icon:"📋",label:"req_mom"}];
 function RequestsPage(p){
   var _active=useState("memo"),active=_active[0];
+  var _view=useState("create");
+  var _drafts=useState([]),_dLoading=useState(false);
+  var _users=useState([]);
+  var userName=p.userName||"";
+  function loadDrafts(){_dLoading[1](true);
+    apiGet("getRequestDrafts",{user:userName}).then(function(r){if(r.ok)_drafts[1](r.drafts||[]);_dLoading[1](false)}).catch(function(){_dLoading[1](false)})}
+  useEffect(function(){
+    apiGet("getUsers").then(function(r){if(r.ok)_users[1]((r.users||[]).filter(function(u){return u.username!=="admin"&&u.name}))});
+    loadDrafts()},[]);
   var docTypes=REQ_DOCS;
+  var statusBadge=function(s){var c=s==="Approved"?"#45B369":s==="Rejected"?"#EF4A00":s==="Pending"?"#FF9F29":"#9CA3AF";
+    return e("span",{style:{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:4,background:c+"1A",color:c}},s)};
+
+  // Drafts view
+  if(_view[0]==="drafts")return e("div",null,
+    e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:20}},
+      e("h2",{style:{fontSize:20,fontWeight:700,margin:0}},"📝 "+t("sb_requests"))),
+    e("div",{style:{display:"flex",gap:8,marginBottom:20,borderBottom:"1px solid var(--border)",paddingBottom:4}},
+      e("button",{className:"tab-btn",onClick:function(){_view[1]("create")}},"➕ New Document"),
+      e("button",{className:"tab-btn tab-active",onClick:function(){loadDrafts()}},"📄 Drafts & Approvals")),
+    e("div",{className:"card"},e("div",{className:"card-header"},
+      e("span",{className:"card-title"},"Your Documents"),
+      e("button",{className:"btn btn-ghost btn-sm",onClick:loadDrafts},"↻ Refresh")),
+      e("div",{className:"card-body"},
+        _dLoading[0]?e("div",{style:{textAlign:"center",padding:40}},e("div",{className:"spinner",style:{margin:"0 auto"}}))
+        :_drafts[0].length===0?e("div",{style:{textAlign:"center",padding:40,color:"var(--text-tertiary)"}},"No drafts yet. Create a document and save it.")
+        :e("table",null,
+          e("thead",null,e("tr",null,["Type","Title / Nomor","Status","Approver","Updated","Actions"].map(function(h){return e("th",{key:h},h)}))),
+          e("tbody",null,_drafts[0].map(function(dr){return e("tr",{key:dr.id},
+            e("td",null,(REQ_DOCS.filter(function(d2){return d2.id===dr.docType})[0]||{}).icon||"📄"," ",dr.docType.toUpperCase()),
+            e("td",null,e("div",{style:{fontWeight:600,fontSize:13}},dr.title||dr.nomor||"Untitled"),dr.tanggal&&e("div",{style:{fontSize:11,color:"var(--text-tertiary)"}},dr.tanggal)),
+            e("td",null,statusBadge(dr.status)),
+            e("td",null,dr.approver||"—"),
+            e("td",{style:{fontSize:11,color:"var(--text-tertiary)"}},dr.updated||dr.created),
+            e("td",null,
+              dr.status==="Pending"&&dr.approver===userName&&e("div",{style:{display:"flex",gap:4}},
+                e("button",{className:"btn btn-success btn-sm",onClick:function(){if(confirm("Approve this document?")){apiPostT("approveRequest",{},dr.id,"Document approved").then(loadDrafts)}}},"✅"),
+                e("button",{className:"btn btn-danger btn-sm",onClick:function(){var c=prompt("Reason for rejection:");if(c)apiPostT("rejectRequest",{comments:c},dr.id,"Document rejected").then(loadDrafts)}},"❌")),
+              dr.createdBy===userName&&(dr.status==="Draft"||dr.status==="Rejected")&&e("button",{className:"del-icon",onClick:function(){if(confirm("Delete?"))apiPostT("deleteRequestDraft",{},dr.id,"Deleted").then(loadDrafts)}},"✕"))
+          )})))))
+  );
+
+  // Create view
   return e("div",null,
     e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:20}},
       e("h2",{style:{fontSize:20,fontWeight:700,color:"var(--text-primary)",margin:0}},"📝 "+t("sb_requests")),
       e("span",{style:{fontSize:12,color:"var(--text-tertiary)"}},"Document Generator")),
-    e("div",{style:{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap",borderBottom:"1px solid var(--border)",paddingBottom:4}},
-      docTypes.map(function(dt){return e("button",{key:dt.id,className:"tab-btn"+(active===dt.id?" tab-active":""),
+    e("div",{style:{display:"flex",gap:8,marginBottom:20,borderBottom:"1px solid var(--border)",paddingBottom:4}},
+      e("button",{className:"tab-btn tab-active",onClick:function(){_view[1]("create")}},"➕ New Document"),
+      e("button",{className:"tab-btn",onClick:function(){_view[1]("drafts");loadDrafts()}},"📄 Drafts ("+_drafts[0].length+")")),
+    e("div",{style:{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}},
+      docTypes.map(function(dt){return e("button",{key:dt.id,
+        style:{padding:"8px 16px",borderRadius:8,fontSize:12,fontWeight:active===dt.id?700:500,background:active===dt.id?"rgba(72,127,255,.1)":"var(--bg-surface)",color:active===dt.id?"#487FFF":"var(--text-secondary)",border:active===dt.id?"1px solid rgba(72,127,255,.3)":"1px solid var(--border)",cursor:"pointer",fontFamily:"inherit"},
         onClick:function(){_active[1](dt.id)}},dt.icon+" "+t(dt.label))})),
     e("div",{className:"card"},e("div",{className:"card-body"},
       active==="memo"?e(ReqMemo)
       :active==="fpb"?e(ReqFPB)
       :active==="stpd"?e(ReqSTPD)
       :active==="uhpd"?e(ReqUHPD)
-      :e(ReqMOM))));
+      :e(ReqMOM))),
+    active!=="mom"&&e("div",{className:"card",style:{marginTop:16}},e("div",{className:"card-body"},
+      e(ApprovalPanel,{docType:active,userName:userName,users:_users[0],onSaved:loadDrafts})))
+  );
+}
+function ApprovalPanel(p){
+  var _sendAppr=useState(false),_approver=useState(""),_saving=useState(false),_nomor=useState("");
+  function saveDraft(status){_saving[1](true);
+    var data={docType:p.docType,title:p.docType.toUpperCase()+" Document",nomor:_nomor[0],tanggal:todayISO(),dataJson:"{}",status:status,createdBy:p.userName,approver:status==="Pending"?_approver[0]:""};
+    apiPostT("saveRequestDraft",data,null,status==="Pending"?"Sent for approval":"Draft saved").then(function(){_saving[1](false);if(p.onSaved)p.onSaved()}).catch(function(){_saving[1](false)})}
+  return e("div",null,
+    e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:12}},
+      e("span",{style:{fontSize:15}},"📨"),
+      e("span",{style:{fontSize:14,fontWeight:600}},"Save & Approval")),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr auto",gap:12,alignItems:"end",marginBottom:12}},
+      ReqInput({label:"Document Number",value:_nomor[0],onChange:function(v){_nomor[1](v)},placeholder:"e.g. MM-01/SCCI/JM/2026"}),
+      e("div",{style:{marginBottom:10}},
+        e("label",{style:{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13}},
+          e("input",{type:"checkbox",checked:_sendAppr[0],onChange:function(){_sendAppr[1](!_sendAppr[0])}}),
+          "Send for Approval"))),
+    _sendAppr[0]&&e("div",{style:{marginBottom:12}},
+      e("label",{className:"label"},"Select Approver"),
+      e("select",{className:"select",value:_approver[0],onChange:function(ev){_approver[1](ev.target.value)}},
+        e("option",{value:""},"-- Select approver --"),
+        p.users.map(function(u){return e("option",{key:u.id,value:u.name},u.name+" ("+roleLabel(u.role)+")")}))),
+    e("div",{style:{display:"flex",gap:8}},
+      e("button",{className:"btn btn-ghost",disabled:_saving[0],onClick:function(){saveDraft("Draft")}},_saving[0]?"⏳":"","💾 Save Draft"),
+      _sendAppr[0]&&e("button",{className:"btn btn-primary",disabled:_saving[0]||!_approver[0],onClick:function(){saveDraft("Pending")}},_saving[0]?"⏳":"","📨 Send for Approval"))
+  );
+}
+
+// ── Guest Registration Modal (for ext.guest users) ──
+var GUEST_COMPANIES=["PT Surveyor Carbon Consulting Indonesia","PT Surveyor Indonesia","ID Survey"];
+function GuestRegistrationModal(p){
+  var _name=useState(""),_company=useState(GUEST_COMPANIES[0]),_position=useState(""),_err=useState(""),_saving=useState(false);
+  function submit(){
+    if(_name[0].trim().length<10){_err[1]("Please enter your full name (at least 10 characters)");return}
+    if(!_position[0].trim()){_err[1]("Please enter your role / position");return}
+    _saving[1](true);
+    apiPost("registerGuest",{guestName:_name[0].trim(),company:_company[0],position:_position[0].trim()}).then(function(r){
+      _saving[1](false);
+      if(r.ok){p.onRegister({guestName:_name[0].trim(),company:_company[0],position:_position[0].trim(),sessionId:r.sessionId,feedbackSubmitted:false})}
+      else{_err[1]("Registration failed. Please try again.")}
+    }).catch(function(){_saving[1](false);_err[1]("Connection error")})}
+  return e("div",{className:"overlay",style:{zIndex:1500}},
+    e("div",{className:"modal",style:{maxWidth:460,padding:32}},
+      e("div",{style:{textAlign:"center",marginBottom:20}},
+        e("div",{style:{fontSize:40,marginBottom:8}},"\uD83D\uDC4B"),
+        e("h3",{style:{fontSize:18,fontWeight:700,marginBottom:4}},"Welcome, Guest"),
+        e("p",{style:{fontSize:13,color:"var(--text-secondary)"}},"Please identify yourself before accessing the portal")),
+      e("div",{style:{marginBottom:12}},
+        e("label",{className:"label"},"Full Name *"),
+        e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value);_err[1]("")},placeholder:"Enter your full name (min. 10 characters)",style:{marginBottom:4}}),
+        _name[0]&&_name[0].length<10&&e("span",{style:{fontSize:10,color:"#FF9F29"}},_name[0].length+"/10 characters")),
+      e("div",{style:{marginBottom:12}},
+        e("label",{className:"label"},"Company *"),
+        e("select",{className:"select",value:_company[0],onChange:function(ev){_company[1](ev.target.value)}},
+          GUEST_COMPANIES.map(function(c){return e("option",{key:c,value:c},c)}))),
+      e("div",{style:{marginBottom:16}},
+        e("label",{className:"label"},"Role / Position *"),
+        e("input",{className:"input",value:_position[0],onChange:function(ev){_position[1](ev.target.value);_err[1]("")},placeholder:"e.g. Deputy Director, GM Operations"})),
+      _err[0]&&e("p",{style:{fontSize:12,color:"#EF4A00",marginBottom:8}},_err[0]),
+      e("button",{className:"btn btn-primary btn-lg",style:{width:"100%"},disabled:_saving[0],onClick:submit},_saving[0]?"\u23F3 Registering...":"\u2705 Continue to Portal")))
+}
+
+// ── Guest Feedback Modal ──
+function GuestFeedbackModal(p){
+  var _question=useState(""),_submitted=useState(false),_saving=useState(false);
+  function submit(){
+    _saving[1](true);
+    apiPost("submitGuestFeedback",{sessionId:p.guestInfo.sessionId,guestName:p.guestInfo.guestName,company:p.guestInfo.company,position:p.guestInfo.position,
+      projectId:p.projectId||"",projectName:p.projectName||"",question:_question[0].trim()}).then(function(r){
+      _saving[1](false);_submitted[1](true);
+      if(p.onSubmitted)p.onSubmitted()
+    }).catch(function(){_saving[1](false)})}
+  function skip(){if(p.onSkip)p.onSkip()}
+
+  if(_submitted[0])return e("div",{className:"overlay",style:{zIndex:1500}},
+    e("div",{className:"modal",style:{maxWidth:440,padding:32,textAlign:"center"}},
+      e("div",{style:{fontSize:48,marginBottom:12}},"\u2705"),
+      e("h3",{style:{fontSize:18,fontWeight:700,marginBottom:8}},"Thank You!"),
+      e("p",{style:{fontSize:14,color:"var(--text-secondary)",marginBottom:20,lineHeight:1.6}},"Your questions and feedback have been recorded. The respective project owner will respond soon or provide updates during the weekly project report."),
+      e("button",{className:"btn btn-primary",onClick:function(){if(p.onClose)p.onClose()}},"Close")));
+
+  return e("div",{className:"overlay",style:{zIndex:1500}},
+    e("div",{className:"modal",style:{maxWidth:500,padding:32}},
+      e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:16}},
+        e("span",{style:{fontSize:24}},"\uD83D\uDCDD"),
+        e("div",null,
+          e("h3",{style:{fontSize:16,fontWeight:700,margin:0}},"Feedback Form"),
+          e("p",{style:{fontSize:12,color:"var(--text-secondary)",margin:0}},"Questions or feedback about the project report"))),
+      e("div",{style:{marginBottom:12}},
+        e("label",{className:"label"},"Name"),
+        e("input",{className:"input",value:p.guestInfo.guestName,disabled:true,style:{background:"var(--bg-surface)"}})),
+      e("div",{style:{marginBottom:4}},
+        e("label",{className:"label"},"Company"),
+        e("input",{className:"input",value:p.guestInfo.company,disabled:true,style:{background:"var(--bg-surface)"}})),
+      e("div",{style:{marginBottom:16}},
+        e("label",{className:"label"},"Your Question / Feedback"),
+        e("textarea",{className:"input",value:_question[0],onChange:function(ev){_question[1](ev.target.value)},rows:4,placeholder:"Write your questions or feedback about the project report here...",style:{resize:"vertical"}})),
+      e("div",{style:{display:"flex",gap:8}},
+        !p.required&&e("button",{className:"btn btn-ghost",style:{flex:1},onClick:skip},"Skip"),
+        e("button",{className:"btn btn-primary",style:{flex:1},disabled:_saving[0],onClick:submit},_saving[0]?"\u23F3 Submitting...":"\uD83D\uDCE8 Submit Feedback"))))
 }
 
 
@@ -7199,6 +7414,13 @@ function App(){
   var _showAnnouncement=useState(false);
   var _sessionRestored=useState(false);
   var _showAbout=useState(false);
+  var _loginUsername=useState(savedSession?savedSession.username:"");
+  var _guestInfo=useState(savedSession?savedSession.guestInfo:null);
+  var _showGuestReg=useState(false);
+  var _showGuestFeedback=useState(false);
+  var _feedbackProjectId=useState("");
+  var _feedbackProjectName=useState("");
+  var isExtGuest=_loginUsername[0]==="ext.guest";
   var mob=useMobile(); // Must be before any early returns (React hooks rule)
 
   // Restore project/tab from session AFTER projects load (avoids race condition)
@@ -7302,8 +7524,9 @@ function App(){
         }},_pwSaving2[0]?"Setting password...":"Set Password & Continue")))
     :e(LoginModal,{show:true,onClose:function(){},
       onForceChange:function(authData){_forceChange[1](authData)},
-      onLogin:function(role,name,ap,photo,mods){
+      onLogin:function(role,name,ap,photo,mods,username){
       _admin[1](true);_userRole[1](role||"bod");_userName[1](name||"User");_userPhoto[1](photo||"");_assignedPids[1](ap||"");
+      _loginUsername[1](username||"");
       var modList=(mods||"dashboard,projects,workspace,operations,crm,analytics,directory").split(",");_userMods[1](modList);
       window._userCtx={role:role||"bod",name:name||"User"};
       var landing="mgmt";
@@ -7320,21 +7543,23 @@ function App(){
         else if(modList.indexOf("workspace")>=0)landing="workspace";
       }
       _page[1](landing);
-      try{sessionStorage.setItem("scci_session",JSON.stringify({role:role||"bod",name:name||"User",ap:ap||"",photo:photo||"",mods:mods||"",landing:landing}))}catch(x){}
+      // Show guest registration modal for ext.guest
+      if(username==="ext.guest"){_showGuestReg[1](true)}
+      try{sessionStorage.setItem("scci_session",JSON.stringify({role:role||"bod",name:name||"User",ap:ap||"",photo:photo||"",mods:mods||"",landing:landing,username:username||""}))}catch(x){}
     }});
 
   // ── Announcement Data ──
   var ANNOUNCEMENT={
     title:"Yang Baru di SCCI OneHub",
     items:[
-      {icon:"\uD83D\uDCCA",title:"Dashboard Check Point untuk Pengguna Eksternal",desc:"Stakeholder eksternal kini melihat dashboard proyek read-only yang sesuai format laporan holding company — status badge, milestone, S-Curve, Gantt, dan risk heat map dalam satu halaman."},
-      {icon:"\uD83D\uDD04",title:"Tampilan Transformasi",desc:"Beralih antara format Check Point (Surveyor Indonesia) dan Transformasi (IDSurvey/Danantara) dengan satu klik."},
+      {icon:"\uD83D\uDCCA",title:"Dashboard Surveyor Indonesia untuk Pengguna Eksternal",desc:"Stakeholder eksternal kini melihat dashboard proyek read-only yang sesuai format laporan holding company — status badge, milestone, S-Curve, Gantt, dan risk heat map dalam satu halaman."},
+      {icon:"\uD83D\uDD04",title:"Tampilan IDSurvey",desc:"Beralih antara format Surveyor Indonesia dan IDSurvey dengan satu klik."},
       {icon:"\uD83D\uDCC5",title:"Laporan Mingguan Otomatis",desc:"Laporan dibuat otomatis setiap hari Kamis dengan data proyek terkini — persentase penyelesaian, utilisasi anggaran, risiko, dan progres tugas. Reviewer BOD (Agus Rahmad, Yusuf Setyabudhi, Firzah Mahdar) menerima notifikasi untuk memberikan feedback."},
       {icon:"\uD83D\uDCAC",title:"Feedback BOD pada Laporan",desc:"Manajemen kini dapat memberikan feedback langsung pada laporan mingguan yang telah disubmit. Ketika semua reviewer selesai, Project Owner dan PMO otomatis mendapat notifikasi."},
-      {icon:"\u26A0\uFE0F",title:"Kendala & Tindak Lanjut Terstruktur",desc:"Kendala kini terhubung dengan milestone tertentu. Setiap kendala dapat memiliki tindak lanjut dengan tenggat waktu dan penanggung jawab. Semua terlihat di tampilan Check Point."},
-      {icon:"\uD83D\uDD11",title:"Diagram 5M (Fish Diagram)",desc:"Analisis Man, Money, Machine, Method, Market per proyek. Edit dari halaman Overview, otomatis ditampilkan di tampilan Check Point eksternal."},
-      {icon:"\uD83C\uDFAF",title:"Field Objektif Proyek",desc:"Tentukan tujuan proyek di pengaturan proyek. Objektif ditampilkan pada diagram 5M dan tampilan Transformasi."},
-      {icon:"\uD83D\uDDA8\uFE0F",title:"Cetak / Ekspor PDF",desc:"Ekspor tampilan Check Point atau Transformasi sebagai PDF melalui dialog cetak browser. Layout A4 landscape yang rapi."},
+      {icon:"\u26A0\uFE0F",title:"Kendala & Tindak Lanjut Terstruktur",desc:"Kendala kini terhubung dengan milestone tertentu. Setiap kendala dapat memiliki tindak lanjut dengan tenggat waktu dan penanggung jawab. Semua terlihat di tampilan Surveyor Indonesia."},
+      {icon:"\uD83D\uDD11",title:"Diagram 5M (Fish Diagram)",desc:"Analisis Man, Money, Machine, Method, Market per proyek. Edit dari halaman Overview, otomatis ditampilkan di tampilan Surveyor Indonesia eksternal."},
+      {icon:"\uD83C\uDFAF",title:"Field Objektif Proyek",desc:"Tentukan tujuan proyek di pengaturan proyek. Objektif ditampilkan pada diagram 5M dan tampilan IDSurvey."},
+      {icon:"\uD83D\uDDA8\uFE0F",title:"Cetak / Ekspor PDF",desc:"Ekspor tampilan Surveyor Indonesia atau IDSurvey sebagai PDF melalui dialog cetak browser. Layout A4 landscape yang rapi."},
       {icon:"\u26A1",title:"Peningkatan Performa",desc:"Pengguna eksternal memuat data 2x lebih cepat. Polling notifikasi dikurangi. Tampilan Calm Mode dengan visual yang lebih bersih."}
     ]
   };
@@ -7362,20 +7587,20 @@ function App(){
     // ── Sidebar ──
     mob&&_sidebarOpen[0]&&e("div",{className:"mobile-overlay",onClick:function(){_sidebarOpen[1](false)}}),
     e("aside",{className:"sidebar"+(mob&&_sidebarOpen[0]?" open":""),style:mob&&!_sidebarOpen[0]?{transform:"translateX(-100%)"}:undefined},
-      e("a",{className:"sidebar-logo",href:"#",onClick:function(ev){ev.preventDefault();_page[1]("mgmt");_selectedProject[1](null);_sidebarOpen[1](false)}},
+      e("a",{className:"sidebar-logo",href:"#",onClick:function(ev){ev.preventDefault();if(isExtGuest)return;_page[1]("mgmt");_selectedProject[1](null);_sidebarOpen[1](false)}},
         e("div",{style:{flexShrink:0}},e(HubLogo,{size:40})),
         e("div",null,e("div",{className:"sidebar-logo-text"},"SCCI OneHub"),e("div",{className:"sidebar-logo-sub"},"Digital Workspace"))),
       e("ul",{className:"sidebar-menu"},
         // ── Dashboard (expandable) ──
         e("li",{className:"sidebar-divider"},t("sb_dashboard")),
-        userMods.indexOf("dashboard")>=0&&e("li",{className:"sidebar-item"+(page==="mgmt"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("mgmt");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83C\uDFE0"," ",t("mgmtDash"))),
+        !isExtGuest&&userMods.indexOf("dashboard")>=0&&e("li",{className:"sidebar-item"+(page==="mgmt"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("mgmt");_selectedProject[1](null);_sidebarOpen[1](false)}},"\uD83C\uDFE0"," ",t("mgmtDash"))),
         // Project sub-items - for external users, only show categories with assigned projects
         (function(){var hasOverseas=projects.some(function(p2){return(p2.classification||"Domestic")==="Overseas"});
         var hasDomestic=projects.some(function(p2){return(p2.classification||"Domestic")==="Domestic"});
         return[
-        !isGuest&&userMods.indexOf("projects")>=0&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_dashExpand[1](!_dashExpand[0])},style:{fontWeight:600}},"\uD83D\uDCCA"," Projects ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_dashExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
-        !isGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&hasOverseas&&e("li",{className:"sidebar-item"+(page==="overseas"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("overseas");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDF0F"," Overseas Project")),
-        !isGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&hasDomestic&&e("li",{className:"sidebar-item"+(page==="domestic"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("domestic");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDFE2"," Domestic Project"))
+        !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_dashExpand[1](!_dashExpand[0])},style:{fontWeight:600}},"\uD83D\uDCCA"," Projects ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_dashExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
+        !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&hasOverseas&&e("li",{className:"sidebar-item"+(page==="overseas"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("overseas");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDF0F"," Overseas Project")),
+        !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&hasDomestic&&e("li",{className:"sidebar-item"+(page==="domestic"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("domestic");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDFE2"," Domestic Project"))
         ]}()),
 
         // ── Digital Space ── filtered by modules
@@ -7406,7 +7631,10 @@ function App(){
           e(Avatar,{name:userName,photo:userPhoto,size:32,fontSize:12}),
           e("div",{style:{flex:1,minWidth:0}},e("div",{style:{fontSize:12,fontWeight:600,color:"var(--text-primary)"}},userName||"User"),e("div",{style:{fontSize:10,color:"var(--text-tertiary)"}},roleLabel(userRole))))),
         e("li",{className:"sidebar-item"},e("button",{onClick:function(){_showAbout[1](true);_sidebarOpen[1](false)},style:{fontSize:12,color:"var(--text-tertiary)"}},"\u2139\uFE0F"," About")),
-        e("li",{className:"sidebar-item"},e("button",{onClick:function(){apiPost("userLogout",{userName:userName});_admin[1](false);_sidebarOpen[1](false);try{sessionStorage.removeItem("scci_session")}catch(x){}}},"\u23FB"," ",t("sb_logout")))
+        e("li",{className:"sidebar-item"},e("button",{onClick:function(){
+          if(isExtGuest&&_guestInfo[0]&&!_guestInfo[0].feedbackSubmitted){_showGuestFeedback[1](true);_sidebarOpen[1](false);return}
+          if(isExtGuest&&_guestInfo[0]){apiPost("guestLogout",{guestName:_guestInfo[0].guestName,sessionId:_guestInfo[0].sessionId,feedbackSubmitted:_guestInfo[0].feedbackSubmitted})}
+          apiPost("userLogout",{userName:isExtGuest&&_guestInfo[0]?"External Party: "+_guestInfo[0].guestName:userName});_admin[1](false);_guestInfo[1](null);_sidebarOpen[1](false);try{sessionStorage.removeItem("scci_session")}catch(x){}}},"\u23FB"," ",t("sb_logout")))
       )
     ),
 
@@ -7429,7 +7657,8 @@ function App(){
       e("div",{className:"dashboard-main-body"},
         selectedProject
           ?userRole==="external"
-            ?e(ExternalCheckpointView,{projectId:selectedProject,onBack:function(){_selectedProject[1](null);loadProjects()}})
+            ?e(ExternalCheckpointView,{projectId:selectedProject,hideBack:isExtGuest,onBack:function(){_selectedProject[1](null);loadProjects()},
+              onFeedback:isExtGuest&&_guestInfo[0]?function(){_feedbackProjectId[1](selectedProject);var pr=projects.filter(function(p2){return p2.id===selectedProject})[0];_feedbackProjectName[1](pr?pr.name:"");_showGuestFeedback[1](true)}:null})
             :e(ProjectDetail,{projectId:selectedProject,admin:canEditProject,userRole:userRole,userName:userName,initialTab:_targetTab[0],onTabChange:function(t){_targetTab[1](t)},onBack:function(){_selectedProject[1](null);_targetTab[1](null);loadProjects()}})
           :page==="crm"?e(CRMPage)
           :page==="bd"?e(BDPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userName:userName})
@@ -7456,6 +7685,20 @@ function App(){
         e("p",{style:{fontSize:10,color:"var(--text-tertiary)",marginBottom:20}},"All rights reserved."),
         e("button",{className:"btn btn-ghost",onClick:function(){_showAbout[1](false)}},"Close"))),
     _showSearch[0]&&e(GlobalSearch,{projects:projects,tasksByPIC:_tasksByPIC[0],onClose:function(){_showSearch[1](false)},onSelect:function(id){_selectedProject[1](id);_showSearch[1](false)},onNav:function(pg){_page[1](pg);_selectedProject[1](null);_showSearch[1](false)}}),
+    // Guest Registration Modal (ext.guest only)
+    _showGuestReg[0]&&e(GuestRegistrationModal,{onRegister:function(info){
+      _guestInfo[1](info);_userName[1]("External Party: "+info.guestName);_showGuestReg[1](false);
+      window._userCtx={role:userRole,name:"External Party: "+info.guestName};
+      try{var s=JSON.parse(sessionStorage.getItem("scci_session"));s.guestInfo=info;s.name="External Party: "+info.guestName;sessionStorage.setItem("scci_session",JSON.stringify(s))}catch(x){}}}),
+    // Guest Feedback Modal
+    _showGuestFeedback[0]&&_guestInfo[0]&&e(GuestFeedbackModal,{guestInfo:_guestInfo[0],projectId:_feedbackProjectId[0],projectName:_feedbackProjectName[0],
+      onSubmitted:function(){var gi=Object.assign({},_guestInfo[0],{feedbackSubmitted:true});_guestInfo[1](gi);
+        try{var s=JSON.parse(sessionStorage.getItem("scci_session"));s.guestInfo=gi;sessionStorage.setItem("scci_session",JSON.stringify(s))}catch(x){}},
+      onSkip:function(){
+        apiPost("guestLogout",{guestName:_guestInfo[0].guestName,sessionId:_guestInfo[0].sessionId,feedbackSubmitted:false});
+        apiPost("userLogout",{userName:"External Party: "+_guestInfo[0].guestName});
+        _admin[1](false);_guestInfo[1](null);_showGuestFeedback[1](false);try{sessionStorage.removeItem("scci_session")}catch(x){}},
+      onClose:function(){_showGuestFeedback[1](false)}}),
     // Toast notifications
     e(ToastContainer),
     // Session timeout warning
