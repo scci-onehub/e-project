@@ -617,7 +617,9 @@ function ProjectMap(p){
       var marker=L.marker([ll.lat,ll.lng],{icon:icon}).addTo(leafletMap.current);
       var loc=(pr.city||"")+(pr.province?", "+pr.province:"")+(pr.country?", "+pr.country:"");
       var cls=pr.classification||"Domestic";
-      marker.bindPopup('<div style="font-family:Inter,sans-serif;min-width:180px"><b style="font-size:13px">'+pr.name+'</b><br><span style="font-size:11px;color:#6B7280">'+loc+'</span><br><span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:50px;font-size:10px;font-weight:600;background:'+(cls==="Overseas"?"rgba(72,127,255,.1)":"rgba(69,179,105,.1)")+';color:'+(cls==="Overseas"?"#487FFF":"#45B369")+'">'+cls+'</span> <span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:50px;font-size:10px;font-weight:600;background:'+color+'22;color:'+color+'">'+pStatus+'</span><br><span style="font-size:11px;color:#6B7280;margin-top:4px;display:block">Progress: '+(pr.actualPct||0)+'%</span></div>');
+      // Escape HTML in dynamic text to avoid breaking the popup with special characters
+      var esc=function(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")};
+      marker.bindPopup('<div style="font-family:Inter,sans-serif;min-width:180px;max-width:240px"><b style="font-size:13px;display:block;word-wrap:break-word;overflow-wrap:break-word;line-height:1.35;margin-bottom:2px">'+esc(pr.name)+'</b><span style="font-size:11px;color:#6B7280;display:block;word-wrap:break-word;overflow-wrap:break-word;line-height:1.35">'+esc(loc)+'</span><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"><span style="display:inline-block;padding:2px 8px;border-radius:50px;font-size:10px;font-weight:600;background:'+(cls==="Overseas"?"rgba(72,127,255,.1)":"rgba(69,179,105,.1)")+';color:'+(cls==="Overseas"?"#487FFF":"#45B369")+'">'+esc(cls)+'</span><span style="display:inline-block;padding:2px 8px;border-radius:50px;font-size:10px;font-weight:600;background:'+color+'22;color:'+color+'">'+esc(pStatus)+'</span></div><span style="font-size:11px;color:#6B7280;margin-top:6px;display:block">Progress: '+(pr.actualPct||0)+'%</span></div>',{maxWidth:260});
       marker.on("click",function(){if(onSelect)onSelect(pr.id)});
       markersRef.current.push(marker);
       bounds.push([ll.lat,ll.lng]);
@@ -3113,9 +3115,12 @@ function RealizationModal(p){
   var thisCatPlan=catPlan[selMC]||0;
   var catOverspend=thisCatPlan>0&&thisCatRealAfter>thisCatPlan;
   var catOverAmount=catOverspend?thisCatRealAfter-thisCatPlan:0;
-  // Impact on other categories
+  // Impact on other categories — collect all unique mainCategories from plan + realizations
+  var allMCs={};
+  budgetItems.forEach(function(b){allMCs[b.mainCategory||"Others"]=true});
+  budgetReals.forEach(function(r){allMCs[r.mainCategory||"Others"]=true});
   var otherCatUnspent=0;
-  ["CAPEX","OPEX","Others"].forEach(function(mc){if(mc!==selMC){var p2=catPlan[mc]||0;var r2=catReal[mc]||0;if(p2>r2)otherCatUnspent+=p2-r2}});
+  Object.keys(allMCs).forEach(function(mc){if(mc!==selMC){var p2=catPlan[mc]||0;var r2=catReal[mc]||0;if(p2>r2)otherCatUnspent+=p2-r2}});
   var remainAfterThis=overallBudget>0?overallBudget-totalAfter:0;
   var squeezesOthers=catOverspend&&overallBudget>0&&remainAfterThis<otherCatUnspent;
   // Approval needed only when exceeding ceiling
@@ -3204,7 +3209,12 @@ function ProjBudget(p){
   function toggleSub(key){var o={};o[key]=!_expSub[0][key];_expSub[1](Object.assign({},_expSub[0],o))}
 
   // Build tree: mainCategory → subCategory → items
+  // Start with the three defaults so CAPEX/OPEX/Others always appear even when empty,
+  // then add any custom main categories found in the data (e.g. Perizinan, Training)
   var mainCats=["CAPEX","OPEX","Others"];
+  var seenMC={CAPEX:true,OPEX:true,Others:true};
+  bi.forEach(function(b){var mc=b.mainCategory||"Others";if(!seenMC[mc]){seenMC[mc]=true;mainCats.push(mc)}});
+  br.forEach(function(b){var mc=b.mainCategory||"Others";if(!seenMC[mc]){seenMC[mc]=true;mainCats.push(mc)}});
   var tree={};mainCats.forEach(function(mc){tree[mc]={plan:0,real:0,subs:{}}});
   bi.forEach(function(b){var mc=b.mainCategory||"Others";var sc=b.category||"Uncategorized";
     if(!tree[mc])tree[mc]={plan:0,real:0,subs:{}};
@@ -3229,6 +3239,12 @@ function ProjBudget(p){
   if(overspendAlerts.length>0){mainCats.forEach(function(mc){var t2=tree[mc];if(t2&&t2.real<=t2.plan)unspentOtherPlans+=t2.plan-t2.real})}
 
   var mcColors={CAPEX:{bg:"rgba(72,127,255,.08)",c:"#487FFF",icon:"\uD83C\uDFE2"},OPEX:{bg:"rgba(255,159,41,.08)",c:"#FF9F29",icon:"\uD83D\uDCCB"},Others:{bg:"rgba(139,92,246,.08)",c:"#8B5CF6",icon:"\uD83D\uDCCE"}};
+  // Fallback palette for user-defined categories (beyond CAPEX/OPEX/Others)
+  var customPalette=[{bg:"rgba(28,212,198,.08)",c:"#1CD4C6",icon:"\uD83C\uDFF7"},{bg:"rgba(239,74,0,.08)",c:"#EF4A00",icon:"\uD83D\uDCCA"},{bg:"rgba(69,179,105,.08)",c:"#45B369",icon:"\uD83D\uDCC8"},{bg:"rgba(217,119,6,.08)",c:"#D97706",icon:"\u2B50"}];
+  var _palIdx=0;
+  function getMcColor(mc){if(mcColors[mc])return mcColors[mc];var col=customPalette[_palIdx%customPalette.length];_palIdx++;mcColors[mc]=col;return col}
+  // Pre-assign colors for custom categories so each gets a stable one
+  mainCats.forEach(function(mc){getMcColor(mc)});
   function saveCeiling(){apiPost("updateProject",{overallBudget:Number(_ceilVal[0])||0},projectId).then(function(){_editCeiling[1](false);reload()})}
 
   return e("div",{style:{animation:"fadeIn .3s"}},
@@ -3265,8 +3281,8 @@ function ProjBudget(p){
           e("span",null,"Realized: "+fmtIDR(totalReal)),
           e("span",null,"Remaining: "+fmtIDR(overallBudget-totalReal)))),
       // Summary row
-      e("div",{style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}},
-        mainCats.map(function(mc){var t=tree[mc]||{plan:0,real:0};var col=mcColors[mc];var pct=t.plan>0?Math.round(t.real/t.plan*100):0;
+      e("div",{style:{display:"grid",gridTemplateColumns:"repeat("+Math.min(mainCats.length,4)+",1fr)",gap:12}},
+        mainCats.map(function(mc){var t=tree[mc]||{plan:0,real:0};var col=getMcColor(mc);var pct=t.plan>0?Math.round(t.real/t.plan*100):0;
           return e("div",{key:mc,style:{textAlign:"center",background:col.bg,borderRadius:8,padding:"12px 8px",cursor:"pointer"},onClick:function(){toggleMain(mc)}},
             e("div",{style:{fontSize:16}},col.icon),
             e("div",{style:{fontSize:13,fontWeight:700,color:col.c}},mc),
@@ -3291,7 +3307,7 @@ function ProjBudget(p){
 
     // ═══ CATEGORY VIEW ═══
     _view[0]==="category"&&mainCats.map(function(mc){
-      var t=tree[mc]||{plan:0,real:0,subs:{}};var col=mcColors[mc];var isOpen=_exp[0][mc];
+      var t=tree[mc]||{plan:0,real:0,subs:{}};var col=getMcColor(mc);var isOpen=_exp[0][mc];
       var subKeys=Object.keys(t.subs).sort();
       if(t.plan===0&&t.real===0&&subKeys.length===0)return null;
       return e("div",{key:mc,className:"card",style:{marginBottom:12,overflow:"hidden"}},
