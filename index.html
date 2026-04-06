@@ -245,7 +245,10 @@ function apiPost(action,data,id){
 function fmt(d){if(!d||typeof d!=="string")return"";var m=String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return"";try{var dt=new Date(d+"T00:00:00");return isNaN(dt.getTime())?"":dt.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}catch(e){return""}}
 // Number formatting for budget inputs
 function fmtNum(n){if(!n&&n!==0)return"";return Number(String(n).replace(/[^0-9.-]/g,"")).toLocaleString("id-ID",{minimumFractionDigits:2,maximumFractionDigits:2})}
+// For live input — thousand separators only, no forced decimals (prevents "5 + 0 = 5000" bug)
+function fmtNumInput(n){if(!n&&n!==0)return"";var digits=String(n).replace(/[^0-9]/g,"");if(!digits)return"";return Number(digits).toLocaleString("id-ID")}
 function parseNum(s){return Number(String(s).replace(/[^0-9.-]/g,""))||0}
+function sortByName(arr){if(!Array.isArray(arr))return arr;return arr.slice().sort(function(a,b){var na=String(a&&a.name||"").toLowerCase(),nb=String(b&&b.name||"").toLowerCase();if(!na&&nb)return 1;if(na&&!nb)return -1;if(na<nb)return -1;if(na>nb)return 1;return 0})}
 function fmtF(d){if(!d||typeof d!=="string")return"";var m=String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return"";try{var dt=new Date(d+"T00:00:00");return isNaN(dt.getTime())?"":dt.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}catch(e){return""}}
 function pct(n){return Math.round(n*1000)/10}
 function sc(s){var sl=(s||"").toLowerCase();return sl==="done"?"#45B369":sl==="in progress"?"#FF9F29":sl==="pending review"?"#8B5CF6":"#9CA3AF"}
@@ -1785,7 +1788,7 @@ function ProjectDetail(p){
   var _showMore=useState(false);
 
   function load(){_loading[1](true);apiGet("getProject",{id:projectId}).then(function(d){if(d.ok)setData(d)}).finally(function(){_loading[1](false)})}
-  useEffect(function(){load();apiGet("getUsers").then(function(d){if(d.ok)_users[1]((d.users||[]).filter(function(u){return u.username!=="admin"}))})},[projectId]);
+  useEffect(function(){load();apiGet("getUsers").then(function(d){if(d.ok)_users[1](sortByName((d.users||[]).filter(function(u){return u.username!=="admin"})))})},[projectId]);
 
   if(_loading[0]||!data||!data.project)return e(Spinner);
 
@@ -1806,7 +1809,34 @@ function ProjectDetail(p){
   function editSub(s){_editSubModal[1](s)}
   function saveSubEdit(s){apiPost("updateSubtask",{name:s.name,startDate:s.startDate,endDate:s.endDate,done:s.done},s.id).then(function(){load();_editSubModal[1](null)})}
   function saveTask(changes){var tid=_editTask[0].id;apiPost("updateTask",{name:changes.name,milestoneName:changes.milestone.name,milestoneDate:changes.milestone.date,weight:changes.weight,startDate:changes.startDate,endDate:changes.endDate,taskStatus:changes.taskStatus,startMonth:changes.startMonth,assignee:changes.assignee||"",department:changes.department||""},tid).then(function(){load();_editTask[1](null)})}
-  function addTask(t){apiPost("addTask",{projectId:projectId,name:t.name,milestoneName:t.milestone.name,milestoneDate:t.milestone.date,weight:t.weight,startMonth:t.startMonth||getCM(),sortOrder:tasks.length,startDate:t.startDate,endDate:t.endDate,taskStatus:t.taskStatus||"Not Started",assignee:t.assignee||"",department:t.department||""}).then(function(){load();_showAddTask[1](false)})}
+  function addTask(t){
+    // Close modal immediately for instant feedback (optimistic UI)
+    _showAddTask[1](false);
+    // Build the task payload
+    var payload={projectId:projectId,name:t.name,milestoneName:t.milestone.name,milestoneDate:t.milestone.date,weight:t.weight,startMonth:t.startMonth||getCM(),sortOrder:tasks.length,startDate:t.startDate,endDate:t.endDate,taskStatus:t.taskStatus||"Not Started",assignee:t.assignee||"",department:t.department||""};
+    // Temporary ID — will be replaced with real ID from server response
+    var tempId="_optimistic_"+Date.now();
+    // Build a task object matching the shape the frontend expects (same as what the backend returns via getProject)
+    var optimisticTask={id:tempId,projectId:projectId,name:t.name,milestoneName:t.milestone.name,milestoneDate:t.milestone.date||"",weight:Number(t.weight)||20,startMonth:Number(t.startMonth||getCM())||0,sortOrder:tasks.length,startDate:t.startDate||"",endDate:t.endDate||"",taskStatus:t.taskStatus||"Not Started",status:t.taskStatus||"Not Started",dependsOn:"",assignee:t.assignee||"",department:t.department||"",completionNote:"",submittedDate:"",approvedDate:"",approvedBy:"",rejectionCount:0,rejectionNote:"",subtasks:[],milestone:{name:t.milestone.name,date:t.milestone.date||""},_pending:true};
+    // Immediately add to local state so user sees the task right away
+    setData(function(prev){if(!prev)return prev;var newTasks=(prev.tasks||[]).concat([optimisticTask]);return Object.assign({},prev,{tasks:newTasks})});
+    // Send to backend in the background
+    apiPost("addTask",payload).then(function(d){
+      if(d&&d.ok&&d.id){
+        // Replace optimistic task with the real ID from server
+        setData(function(prev){if(!prev)return prev;var newTasks=(prev.tasks||[]).map(function(tk){return tk.id===tempId?Object.assign({},tk,{id:d.id,_pending:false}):tk});return Object.assign({},prev,{tasks:newTasks})});
+        if(typeof showToast==="function")showToast("Task added","success");
+      }else{
+        // Server returned error — roll back
+        setData(function(prev){if(!prev)return prev;var newTasks=(prev.tasks||[]).filter(function(tk){return tk.id!==tempId});return Object.assign({},prev,{tasks:newTasks})});
+        if(typeof showToast==="function")showToast((d&&d.error)||"Failed to add task — please retry","error");
+      }
+    }).catch(function(){
+      // Network error — roll back
+      setData(function(prev){if(!prev)return prev;var newTasks=(prev.tasks||[]).filter(function(tk){return tk.id!==tempId});return Object.assign({},prev,{tasks:newTasks})});
+      if(typeof showToast==="function")showToast("Connection error — task not saved","error");
+    })
+  }
   function addTaskUnderMilestone(mileName,mileDate){_addTaskMile[1]({name:mileName,date:mileDate||""})}
   function delTask(tid){if(confirm("Delete this task and all subtasks?"))apiPostT("deleteTask",null,tid,"Task deleted").then(load)}
   function reorderTasks(newOrder){apiPost("reorderTasks",newOrder).then(load)}
@@ -2979,7 +3009,7 @@ function BudgetItemModal(p){
       e("div",null,e("label",{className:"label"},"Milestone"),milestones.length>0?e("select",{className:"select",value:_mile[0],onChange:function(ev){_mile[1](ev.target.value)}},e("option",{value:""},"-- Select --"),milestones.map(function(m){return e("option",{key:m,value:m},m)})):e("input",{className:"input",value:_mile[0],onChange:function(ev){_mile[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Unit"),e("select",{className:"select",value:_unit[0],onChange:function(ev){_unit[1](ev.target.value)}},["Lot","Person","Man Power","Unit","Set","Pcs","Kg","Liter","M2","M3"].map(function(u){return e("option",{key:u,value:u},u)})))),
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}},
-      e("div",null,e("label",{className:"label"},"Unit Price"),e("input",{className:"input",value:_up[0]?fmtNum(_up[0]):"",onChange:function(ev){_up[1](ev.target.value.replace(/[^0-9]/g,""))},placeholder:"0",style:{fontFamily:mono}})),
+      e("div",null,e("label",{className:"label"},"Unit Price"),e("input",{className:"input",value:_up[0]?fmtNumInput(_up[0]):"",onChange:function(ev){_up[1](ev.target.value.replace(/[^0-9]/g,""))},placeholder:"0",style:{fontFamily:mono}})),
       e("div",null,e("label",{className:"label"},"Qty"),e("input",{type:"number",className:"input",value:_qty[0],onChange:function(ev){_qty[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Volume"),e("input",{type:"number",className:"input",value:_vol[0],onChange:function(ev){_vol[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Unit Volume"),e("select",{className:"select",value:_uv[0],onChange:function(ev){_uv[1](ev.target.value)}},["Month","Year","Day","Trip","Lot"].map(function(u){return e("option",{key:u,value:u},u)})))),
@@ -3074,7 +3104,7 @@ function RealizationModal(p){
       e("div",{style:{height:6,background:"var(--bg-hover)",borderRadius:3,overflow:"hidden",marginTop:8}},
         e("div",{style:{height:"100%",width:planAmount>0?Math.min(alreadyRealized/planAmount*100,100)+"%":"0%",background:"#45B369",borderRadius:3}}))),
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}},
-      e("div",null,e("label",{className:"label"},"Unit Price"),e("input",{className:"input",value:_up[0]?fmtNum(_up[0]):"",onChange:function(ev){_up[1](ev.target.value.replace(/[^0-9]/g,""))},placeholder:"0",style:{fontFamily:mono}})),
+      e("div",null,e("label",{className:"label"},"Unit Price"),e("input",{className:"input",value:_up[0]?fmtNumInput(_up[0]):"",onChange:function(ev){_up[1](ev.target.value.replace(/[^0-9]/g,""))},placeholder:"0",style:{fontFamily:mono}})),
       e("div",null,e("label",{className:"label"},"Qty"),e("input",{type:"number",className:"input",value:_qty[0],onChange:function(ev){_qty[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Volume"),e("input",{type:"number",className:"input",value:_vol[0],onChange:function(ev){_vol[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Realization Date"),e("input",{type:"date",className:"input",value:_realDate[0],onChange:function(ev){_realDate[1](ev.target.value)}}))),
@@ -4176,7 +4206,7 @@ function ProjLog(p){
 // ══════════════════════════════════════════
 function UserManagement(p){
   var _users=useState([]),_loading=useState(true),_showAdd=useState(false),_edit=useState(null);
-  function load(){_loading[1](true);apiGet("getUsers").then(function(d){if(d.ok)_users[1](d.users||[])}).finally(function(){_loading[1](false)})}
+  function load(){_loading[1](true);apiGet("getUsers").then(function(d){if(d.ok)_users[1](sortByName(d.users||[]))}).finally(function(){_loading[1](false)})}
   useEffect(function(){load()},[]);
   var roleColors={admin:{bg:"rgba(239,74,0,.1)",c:"#EF4A00"},project_admin:{bg:"rgba(139,92,246,.1)",c:"#8B5CF6"},pmo:{bg:"rgba(72,127,255,.1)",c:"#487FFF"},project_owner:{bg:"rgba(255,159,41,.1)",c:"#D97706"},bod:{bg:"rgba(69,179,105,.1)",c:"#45B369"},external:{bg:"var(--border-light)",c:"#6B7280"}};
   function del(id){if(confirm("Delete this user?"))apiPost("deleteUser",null,id).then(load)}
@@ -4956,7 +4986,7 @@ function CRMPage(){
       e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},isEdit?"\u270F\uFE0F Edit Deal":"\u2795 New Deal"),
       e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
         e("div",null,e("label",{className:"label"},"Client *"),e("select",{className:"select",value:_cl[0],onChange:function(ev){_cl[1](ev.target.value)}},e("option",{value:""},"Select..."),clients.map(function(c){return e("option",{key:c.id,value:c.id},c.name+(c.company?" ("+c.company+")":""))}))),
-        e("div",null,e("label",{className:"label"},"Amount (IDR)"),e("input",{className:"input",value:fmtNum(_am[0]),onChange:function(ev){_am[1](ev.target.value.replace(/[^0-9]/g,""))}}))),
+        e("div",null,e("label",{className:"label"},"Amount (IDR)"),e("input",{className:"input",value:fmtNumInput(_am[0]),onChange:function(ev){_am[1](ev.target.value.replace(/[^0-9]/g,""))}}))),
       e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}},
         e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},DEAL_ST.map(function(s){return e("option",{key:s,value:s},s)}))),
         e("div",null,e("label",{className:"label"},"Service"),e("select",{className:"select",value:_svc[0],onChange:function(ev){_svc[1](ev.target.value)}},SVC.map(function(s){return e("option",{key:s,value:s},s)}))),
@@ -6359,7 +6389,7 @@ function EmployeeDirectory(){
   var _users=useState([]),_loading=useState(true),_search=useState(""),_roleF=useState("All"),_deptF=useState("All");
 
   useEffect(function(){
-    apiGet("getUsers").then(function(d){if(d.ok)_users[1]((d.users||[]).filter(function(u){return u.username!=="admin"}))}).finally(function(){_loading[1](false)})},[]);
+    apiGet("getUsers").then(function(d){if(d.ok)_users[1](sortByName((d.users||[]).filter(function(u){return u.username!=="admin"})))}).finally(function(){_loading[1](false)})},[]);
 
   var roleColors={admin:{bg:"rgba(239,74,0,.1)",c:"#EF4A00"},project_admin:{bg:"rgba(139,92,246,.1)",c:"#8B5CF6"},pmo:{bg:"rgba(72,127,255,.1)",c:"#487FFF"},project_owner:{bg:"rgba(255,159,41,.1)",c:"#D97706"},bod:{bg:"rgba(69,179,105,.1)",c:"#45B369"},external:{bg:"var(--border-light)",c:"#6B7280"}};
 
@@ -6563,7 +6593,7 @@ function BDPage(p){
       e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}},
         e("div",null,e("label",{className:"label"},"Stage"),e("select",{className:"select",value:_sg[0],onChange:function(ev){_sg[1](ev.target.value)}},STAGES.map(function(s){return e("option",{key:s,value:s},s)}))),
         e("div",null,e("label",{className:"label"},"Priority"),e("select",{className:"select",value:_pr[0],onChange:function(ev){_pr[1](ev.target.value)}},["Critical","High","Medium","Low"].map(function(s){return e("option",{key:s,value:s},s)}))),
-        e("div",null,e("label",{className:"label"},"Market Size (USD)"),e("input",{className:"input",value:fmtNum(_ms[0]),onChange:function(ev){_ms[1](ev.target.value.replace(/[^0-9]/g,""))}}))),
+        e("div",null,e("label",{className:"label"},"Market Size (USD)"),e("input",{className:"input",value:fmtNumInput(_ms[0]),onChange:function(ev){_ms[1](ev.target.value.replace(/[^0-9]/g,""))}}))),
       e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
         e("div",null,e("label",{className:"label"},"BD Owner"),e("input",{className:"input",value:_ow[0],onChange:function(ev){_ow[1](ev.target.value)}})),
         e("div",null,e("label",{className:"label"},"\uD83D\uDD17 Link to PMO Project"),e("select",{className:"select",value:_lnk[0],onChange:function(ev){_lnk[1](ev.target.value)}},e("option",{value:""},"None"),projects.filter(function(p2){return p2.status!=="Archived"}).map(function(p2){return e("option",{key:p2.id,value:p2.id},p2.name)})))),
@@ -7229,7 +7259,7 @@ function RequestsPage(p){
   function loadDrafts(){_dLoading[1](true);
     apiGet("getRequestDrafts",{user:userName}).then(function(r){if(r.ok)_drafts[1](r.drafts||[]);_dLoading[1](false)}).catch(function(){_dLoading[1](false)})}
   useEffect(function(){
-    apiGet("getUsers").then(function(r){if(r.ok)_users[1]((r.users||[]).filter(function(u){return u.username!=="admin"&&u.name}))});
+    apiGet("getUsers").then(function(r){if(r.ok)_users[1](sortByName((r.users||[]).filter(function(u){return u.username!=="admin"&&u.name})))});
     loadDrafts()},[]);
   var docTypes=REQ_DOCS;
   var statusBadge=function(s){var c=s==="Approved"?"#45B369":s==="Rejected"?"#EF4A00":s==="Pending"?"#FF9F29":"#9CA3AF";
