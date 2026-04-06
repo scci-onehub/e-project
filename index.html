@@ -1526,7 +1526,7 @@ function TransformasiView(p){
     // Header
     e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}},
       e("div",null,
-        e("h2",{style:{fontSize:18,fontWeight:800,color:"var(--text-primary)",lineHeight:1.4}},"Ringkasan Analisis Kinerja (",currentMonth,"): ",e("br",null),proj.name),
+        e("h2",{style:{fontSize:18,fontWeight:800,color:"var(--text-primary)",lineHeight:1.4}},p.isExtGuest?proj.name:["Ringkasan Analisis Kinerja (",currentMonth,"): ",e("br",{key:"br"}),proj.name]),
         e("p",{style:{fontSize:12,color:"var(--text-tertiary)",marginTop:4}},"PT Surveyor Carbon Consulting Indonesia")),
       e("span",{style:{fontSize:11,fontWeight:600,padding:"6px 14px",borderRadius:6,background:overallStatus==="Completed"?"rgba(69,179,105,.1)":overallStatus==="On-Progress"?"rgba(255,159,41,.1)":"var(--bg-surface)",color:overallStatus==="Completed"?"#45B369":overallStatus==="On-Progress"?"#FF9F29":"var(--text-tertiary)"}},overallStatus)),
 
@@ -1645,12 +1645,12 @@ function ExternalCheckpointView(p){
 
     // Render based on selected format
     _format[0]==="transformasi"
-      ?e(TransformasiView,{proj:proj,tasks:tasks,milestones:milestones,latestReport:latestReport})
+      ?e(TransformasiView,{proj:proj,tasks:tasks,milestones:milestones,latestReport:latestReport,isExtGuest:p.isExtGuest})
       :e("div",null,
     // Header
     e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}},
       e("div",null,
-        e("h2",{style:{fontSize:20,fontWeight:800,color:"var(--text-primary)"}},"SURVEYOR INDONESIA ",e("span",{style:{color:"#487FFF"}},proj.name.toUpperCase())),
+        e("h2",{style:{fontSize:20,fontWeight:800,color:"var(--text-primary)"}},p.isExtGuest?e("span",{style:{color:"#487FFF"}},proj.name.toUpperCase()):["SURVEYOR INDONESIA ",e("span",{key:"pn",style:{color:"#487FFF"}},proj.name.toUpperCase())]),
         e("p",{style:{fontSize:12,color:"var(--text-tertiary)",marginTop:4}},"PT Surveyor Carbon Consulting Indonesia")),
       e("div",{style:{display:"flex",flexDirection:"column",gap:8,alignItems:"flex-end"}},
         e("div",{style:{background:"var(--bg-surface)",border:"1px solid var(--border)",borderRadius:8,padding:"6px 14px",fontSize:11,color:"var(--text-secondary)",fontWeight:600,whiteSpace:"nowrap"}},"Update as of "+new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})),
@@ -7521,12 +7521,7 @@ function App(){
   var mob=useMobile(); // Must be before any early returns (React hooks rule)
 
   // Restore project/tab from session AFTER projects load (avoids race condition)
-  useEffect(function(){
-    if(!_sessionRestored[0]&&admin&&_allProjects[0].length>0&&savedSession&&savedSession.lastProject){
-      _sessionRestored[1](true);
-      _selectedProject[1](savedSession.lastProject);
-      if(savedSession.lastTab)_targetTab[1](savedSession.lastTab)
-    }},[_allProjects[0].length]);
+  // Moved below projects filter to ensure we validate against the allowed list.
 
   // Persist page/project/tab to session on change
   useEffect(function(){
@@ -7538,17 +7533,38 @@ function App(){
   var sessionTO=useSessionTimeout(function(){_admin[1](false);try{sessionStorage.removeItem("scci_session")}catch(x){}});
 
   // Role-based project filtering
+  // For external users, prefer EXACT project ID match. Fall back to substring name match
+  // only when the assigned value doesn't look like an ID (legacy support).
   var isGuest=userRole==="external"&&!assignedPids;
   var projects=_allProjects[0].filter(function(pr){
     if(userRole==="admin"||userRole==="project_admin"||userRole==="pmo"||userRole==="bod")return true;
     if(userRole==="project_owner")return(pr.manager||"").toLowerCase()===(userName||"").toLowerCase();
     if(userRole==="external"){
       if(!assignedPids)return true; // Guest sees all projects read-only
-      var ids=assignedPids.split(",").map(function(s){return s.trim()});
-      return ids.indexOf(pr.id)>=0||ids.some(function(n){return(pr.name||"").toLowerCase().indexOf(n.toLowerCase())>=0})
+      var ids=assignedPids.split(",").map(function(s){return s.trim()}).filter(Boolean);
+      // First pass: exact project ID match (preferred)
+      if(ids.indexOf(pr.id)>=0)return true;
+      // Second pass: exact name match (case-insensitive)
+      var pname=(pr.name||"").toLowerCase();
+      if(ids.some(function(n){return n.toLowerCase()===pname}))return true;
+      return false;
     }
     return true;
   });
+
+  // Restore project/tab from session AFTER projects load — validates against allowed list
+  useEffect(function(){
+    if(!_sessionRestored[0]&&admin&&_allProjects[0].length>0&&savedSession&&savedSession.lastProject){
+      _sessionRestored[1](true);
+      // For ext.guest, always ignore saved lastProject — force fresh auto-nav to assigned project
+      if(isExtGuest)return;
+      // Validate: only restore if the saved project is still in the user's allowed list
+      var allowed=projects.some(function(pr){return pr.id===savedSession.lastProject});
+      if(allowed){
+        _selectedProject[1](savedSession.lastProject);
+        if(savedSession.lastTab)_targetTab[1](savedSession.lastTab)
+      }
+    }},[_allProjects[0].length]);
 
   // Permission helpers
   var canManageUsers=userRole==="admin";
@@ -7569,9 +7585,12 @@ function App(){
   useEffect(function(){if(connected&&admin){loadProjects();if(userRole!=="external"){loadNotifications();var iv=setInterval(loadNotifications,120000);return function(){clearInterval(iv)}}}},[connected,admin]);
 
   // Auto-navigate external user to first assigned project
+  // For ext.guest specifically, always auto-nav (ignore any stale saved lastProject)
   var _autoNav=useState(false);
   useEffect(function(){
-    if(userRole==="external"&&!_autoNav[0]&&projects.length>0&&!selectedProject&&!(savedSession&&savedSession.lastProject)){
+    if(userRole==="external"&&!_autoNav[0]&&projects.length>0&&!selectedProject){
+      // For non-guest external users, respect saved lastProject if present
+      if(!isExtGuest&&savedSession&&savedSession.lastProject)return;
       _autoNav[1](true);_selectedProject[1](projects[0].id)}
   },[projects.length]);
 
@@ -7754,7 +7773,7 @@ function App(){
       e("div",{className:"dashboard-main-body"},
         selectedProject
           ?userRole==="external"
-            ?e(ExternalCheckpointView,{projectId:selectedProject,hideBack:isExtGuest,onBack:function(){_selectedProject[1](null);loadProjects()},
+            ?e(ExternalCheckpointView,{projectId:selectedProject,hideBack:isExtGuest,isExtGuest:isExtGuest,onBack:function(){_selectedProject[1](null);loadProjects()},
               onFeedback:isExtGuest&&_guestInfo[0]?function(){_feedbackProjectId[1](selectedProject);var pr=projects.filter(function(p2){return p2.id===selectedProject})[0];_feedbackProjectName[1](pr?pr.name:"");_showGuestFeedback[1](true)}:null})
             :e(ProjectDetail,{projectId:selectedProject,admin:canEditProject,userRole:userRole,userName:userName,initialTab:_targetTab[0],onTabChange:function(t){_targetTab[1](t)},onBack:function(){_selectedProject[1](null);_targetTab[1](null);loadProjects()}})
           :page==="crm"?e(CRMPage)
