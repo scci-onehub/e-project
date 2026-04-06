@@ -355,7 +355,23 @@ function SkeletonDashboard(){return e("div",null,
   e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}},
     e("div",{className:"skeleton skeleton-card",style:{height:300}}),
     e("div",{className:"skeleton skeleton-card",style:{height:300}})))}
-function Modal(p){if(!p.show)return null;return e("div",{className:"overlay",onClick:function(ev){if(ev.target===ev.currentTarget)p.onClose()}},e("div",{className:"modal",style:p.style||{}},p.children))}
+function Modal(p){
+  // Document-level Backspace guard — prevent browser history back-navigation while modal is open
+  useEffect(function(){
+    if(!p.show)return;
+    function onDocKey(ev){
+      if(ev.key!=="Backspace")return;
+      var tag=(ev.target&&ev.target.tagName||"").toLowerCase();
+      var editable=tag==="input"||tag==="textarea"||(ev.target&&ev.target.isContentEditable);
+      // Number inputs: only block if empty (they otherwise accept backspace normally)
+      if(tag==="input"&&ev.target.type==="number"&&ev.target.value===""){ev.preventDefault();return}
+      if(!editable)ev.preventDefault()
+    }
+    document.addEventListener("keydown",onDocKey);
+    return function(){document.removeEventListener("keydown",onDocKey)}
+  },[p.show]);
+  if(!p.show)return null;
+  return e("div",{className:"overlay",onClick:function(ev){if(ev.target===ev.currentTarget)p.onClose()}},e("div",{className:"modal",style:p.style||{}},p.children))}
 function Spinner(){return e("div",{style:{display:"flex",justifyContent:"center",padding:40}},e("div",{className:"spinner"}))}
 function HubLogo(p){var sz=p.size||40;return e("svg",{viewBox:"0 0 32 32",width:sz,height:sz,xmlns:"http://www.w3.org/2000/svg"},
   e("defs",null,e("linearGradient",{id:"hlg",x1:"0",y1:"0",x2:"1",y2:"1"},e("stop",{offset:"0",stopColor:"#487FFF"}),e("stop",{offset:"1",stopColor:"#1CD4C6"}))),
@@ -2959,8 +2975,15 @@ function ProjRisks(p){var risks=p.risks,tasks=p.tasks,riskHist=p.riskHist,admin=
 // BUDGET MODULE
 // ══════════════════════════════════════════
 function BudgetItemModal(p){
-  var item=p.item||{};var isEdit=!!item.id;var milestones=p.milestones||[];var cats=p.categories||[];
-  var _mc=useState(item.mainCategory||"CAPEX"),_cat=useState(item.category||""),_desc=useState(item.description||""),_cc=useState(item.costCenter||""),_mile=useState(item.milestone||""),_unit=useState(item.unit||"Lot"),_up=useState(String(item.unitPrice||"")),_qty=useState(String(item.qty||1)),_vol=useState(String(item.volume||1)),_uv=useState(item.unitVolume||"Month"),_rem=useState(item.remarks||""),_saving=useState(false),_err=useState(""),_customSub=useState(""),_customMain=useState("");
+  var item=p.item||{};var isEdit=!!item.id;var milestones=p.milestones||[];var cats=p.categories||[];var costCenters=p.costCenters||[];
+  // Unit / Unit Volume preset lists
+  var UNIT_PRESETS=["Lot","Person","Man Power","Unit","Set","Pcs","Kg","Liter","M2","M3"];
+  var UV_PRESETS=["Month","Year","Day","Trip","Lot","Lump Sum"];
+  // If item's existing unit/unitVolume is not in presets, treat as custom
+  var initUnit=item.unit||"Lot";
+  var initUV=item.unitVolume||"Month";
+  var initCC=item.costCenter||"";
+  var _mc=useState(item.mainCategory||"CAPEX"),_cat=useState(item.category||""),_desc=useState(item.description||""),_cc=useState(initCC),_mile=useState(item.milestone||""),_unit=useState(UNIT_PRESETS.indexOf(initUnit)>=0?initUnit:"__custom__"),_customUnit=useState(UNIT_PRESETS.indexOf(initUnit)<0?initUnit:""),_up=useState(String(item.unitPrice||"")),_qty=useState(String(item.qty||1)),_vol=useState(String(item.volume||1)),_uv=useState(UV_PRESETS.indexOf(initUV)>=0?initUV:"__custom__"),_customUV=useState(UV_PRESETS.indexOf(initUV)<0?initUV:""),_ccMode=useState(costCenters.indexOf(initCC)>=0?"select":(initCC?"custom":"select")),_rem=useState(item.remarks||""),_saving=useState(false),_err=useState(""),_customSub=useState(""),_customMain=useState("");
   var upN=Number(_up[0])||0,qtyN=Number(_qty[0])||0,volN=Number(_vol[0])||0,total=upN*qtyN*volN;
   var subCats=cats.filter(function(c){return c.mainCategory===_mc[0]}).map(function(c){return c.subCategory});
   var isOthers=_mc[0]==="Others";
@@ -2971,8 +2994,12 @@ function BudgetItemModal(p){
     if(!isOthers)finalMain=_mc[0];
     if(!finalSub.trim()){_err[1]("Sub-category required");return}
     if(!_desc[0].trim()){_err[1]("Description required");return}
+    var finalUnit=_unit[0]==="__custom__"?(_customUnit[0]||"").trim():_unit[0];
+    var finalUV=_uv[0]==="__custom__"?(_customUV[0]||"").trim():_uv[0];
+    if(!finalUnit){_err[1]("Unit required");return}
+    if(!finalUV){_err[1]("Unit Volume required");return}
     _saving[1](true);
-    var data={projectId:p.projectId,mainCategory:finalMain,category:finalSub,description:_desc[0],costCenter:_cc[0],milestone:_mile[0],unit:_unit[0],unitPrice:upN,qty:qtyN,volume:volN,unitVolume:_uv[0],remarks:_rem[0]};
+    var data={projectId:p.projectId,mainCategory:finalMain,category:finalSub,description:_desc[0],costCenter:(_cc[0]||"").trim(),milestone:_mile[0],unit:finalUnit,unitPrice:upN,qty:qtyN,volume:volN,unitVolume:finalUV,remarks:_rem[0]};
     (isEdit?apiPost("updateBudgetItem",data,item.id):apiPost("addBudgetItem",data)).then(function(d){
       if(d.ok){p.reload();p.onClose()}else _err[1](d.error||"Failed")
     }).finally(function(){_saving[1](false)})
@@ -2997,22 +3024,43 @@ function BudgetItemModal(p){
           e("option",{value:""},"-- Select --"),
           subCats.map(function(sc){return e("option",{key:sc,value:sc},sc)}),
           e("option",{value:"__custom__"},"\u270F Other (type custom)"))),
-      e("div",null,e("label",{className:"label"},"Cost Center"),e("input",{className:"input",value:_cc[0],onChange:function(ev){_cc[1](ev.target.value)},placeholder:"e.g. Business Development"}))),
+      e("div",null,e("label",{className:"label"},"Cost Center"),
+        _ccMode[0]==="select"&&costCenters.length>0?e("select",{className:"select",value:costCenters.indexOf(_cc[0])>=0?_cc[0]:"",onChange:function(ev){if(ev.target.value==="__custom__"){_ccMode[1]("custom");_cc[1]("")}else{_cc[1](ev.target.value)}}},
+          e("option",{value:""},"-- Select --"),
+          costCenters.map(function(c){return e("option",{key:c,value:c},c)}),
+          e("option",{value:"__custom__"},"\u270F Other (type custom)"))
+        :e("div",{style:{display:"flex",gap:4}},
+          e("input",{className:"input",value:_cc[0],onChange:function(ev){_cc[1](ev.target.value)},placeholder:"e.g. Business Development",style:{flex:1}}),
+          costCenters.length>0&&e("button",{className:"btn btn-ghost btn-sm",type:"button",onClick:function(){_ccMode[1]("select");_cc[1]("")},title:"Back to list"},"\u2630")))),
     !isOthers&&isCustomSub&&e("div",{style:{marginBottom:12}},
       e("label",{className:"label"},"Custom Sub-Category *"),
       e("input",{className:"input",value:_customSub[0],onChange:function(ev){_customSub[1](ev.target.value)},placeholder:"Type your sub-category name..."})),
     isOthers&&e("div",{style:{marginBottom:12}},
       e("label",{className:"label"},"Cost Center"),
-      e("input",{className:"input",value:_cc[0],onChange:function(ev){_cc[1](ev.target.value)},placeholder:"e.g. Business Development"})),
+      _ccMode[0]==="select"&&costCenters.length>0?e("select",{className:"select",value:costCenters.indexOf(_cc[0])>=0?_cc[0]:"",onChange:function(ev){if(ev.target.value==="__custom__"){_ccMode[1]("custom");_cc[1]("")}else{_cc[1](ev.target.value)}}},
+        e("option",{value:""},"-- Select --"),
+        costCenters.map(function(c){return e("option",{key:c,value:c},c)}),
+        e("option",{value:"__custom__"},"\u270F Other (type custom)"))
+      :e("div",{style:{display:"flex",gap:4}},
+        e("input",{className:"input",value:_cc[0],onChange:function(ev){_cc[1](ev.target.value)},placeholder:"e.g. Business Development",style:{flex:1}}),
+        costCenters.length>0&&e("button",{className:"btn btn-ghost btn-sm",type:"button",onClick:function(){_ccMode[1]("select");_cc[1]("")},title:"Back to list"},"\u2630"))),
     e("label",{className:"label"},"Description *"),e("input",{className:"input",value:_desc[0],onChange:function(ev){_desc[1](ev.target.value)},placeholder:"e.g. Office Renovation, Marketing Campaign",style:{marginBottom:12}}),
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"Milestone"),milestones.length>0?e("select",{className:"select",value:_mile[0],onChange:function(ev){_mile[1](ev.target.value)}},e("option",{value:""},"-- Select --"),milestones.map(function(m){return e("option",{key:m,value:m},m)})):e("input",{className:"input",value:_mile[0],onChange:function(ev){_mile[1](ev.target.value)}})),
-      e("div",null,e("label",{className:"label"},"Unit"),e("select",{className:"select",value:_unit[0],onChange:function(ev){_unit[1](ev.target.value)}},["Lot","Person","Man Power","Unit","Set","Pcs","Kg","Liter","M2","M3"].map(function(u){return e("option",{key:u,value:u},u)})))),
+      e("div",null,e("label",{className:"label"},"Unit"),
+        e("select",{className:"select",value:_unit[0],onChange:function(ev){_unit[1](ev.target.value);if(ev.target.value!=="__custom__")_customUnit[1]("")}},
+          UNIT_PRESETS.map(function(u){return e("option",{key:u,value:u},u)}),
+          e("option",{value:"__custom__"},"\u270F Other (type custom)")),
+        _unit[0]==="__custom__"&&e("input",{className:"input",value:_customUnit[0],onChange:function(ev){_customUnit[1](ev.target.value)},placeholder:"Type custom unit...",style:{marginTop:6}}))),
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"Unit Price"),e("input",{className:"input",value:_up[0]?fmtNumInput(_up[0]):"",onChange:function(ev){_up[1](ev.target.value.replace(/[^0-9]/g,""))},placeholder:"0",style:{fontFamily:mono}})),
       e("div",null,e("label",{className:"label"},"Qty"),e("input",{type:"number",className:"input",value:_qty[0],onChange:function(ev){_qty[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Volume"),e("input",{type:"number",className:"input",value:_vol[0],onChange:function(ev){_vol[1](ev.target.value)}})),
-      e("div",null,e("label",{className:"label"},"Unit Volume"),e("select",{className:"select",value:_uv[0],onChange:function(ev){_uv[1](ev.target.value)}},["Month","Year","Day","Trip","Lot"].map(function(u){return e("option",{key:u,value:u},u)})))),
+      e("div",null,e("label",{className:"label"},"Unit Volume"),
+        e("select",{className:"select",value:_uv[0],onChange:function(ev){_uv[1](ev.target.value);if(ev.target.value!=="__custom__")_customUV[1]("")}},
+          UV_PRESETS.map(function(u){return e("option",{key:u,value:u},u)}),
+          e("option",{value:"__custom__"},"\u270F Other (type custom)")),
+        _uv[0]==="__custom__"&&e("input",{className:"input",value:_customUV[0],onChange:function(ev){_customUV[1](ev.target.value)},placeholder:"Type custom...",style:{marginTop:6}}))),
     e("div",{style:{background:"rgba(72,127,255,.08)",padding:"12px 16px",borderRadius:8,marginBottom:12}},
       e("div",{style:{fontSize:11,color:"var(--text-secondary)"}},"Total = Unit Price \u00D7 Qty \u00D7 Volume"),
       e("div",{style:{fontSize:20,fontWeight:700,fontFamily:mono,color:"#487FFF"}},"IDR "+total.toLocaleString("id-ID",{minimumFractionDigits:2,maximumFractionDigits:2}))),
@@ -3147,6 +3195,9 @@ function ProjBudget(p){
   function fN(n){return Number(n).toLocaleString("id-ID",{minimumFractionDigits:2,maximumFractionDigits:2})}
   function fmtIDR(n){return"IDR "+fN(n)}
   var milestoneNames=[];var msSet={};tasks.forEach(function(t){var mn=t.milestone?t.milestone.name:t.name;if(mn&&!msSet[mn]){msSet[mn]=true;milestoneNames.push(mn)}});
+  // Unique cost centers from existing budget items
+  var ccSet={};bi.forEach(function(b){if(b.costCenter&&String(b.costCenter).trim())ccSet[String(b.costCenter).trim()]=true});
+  var ccList=Object.keys(ccSet).sort(function(a,b){return a.toLowerCase()<b.toLowerCase()?-1:1});
   function delBI(id){if(confirm("Delete this budget item and all its realizations?"))apiPost("deleteBudgetItem",null,id).then(reload)}
   function delBR(id){if(confirm("Delete this realization?"))apiPost("deleteBudgetRealization",null,id).then(reload)}
   function toggleMain(mc){var o={};o[mc]=!_exp[0][mc];_exp[1](Object.assign({},_exp[0],o))}
@@ -3341,8 +3392,8 @@ function ProjBudget(p){
         overallBudget>0&&e("div",null,e("div",{style:{fontSize:10,color:"var(--text-tertiary)"}},"REMAINING CEILING"),e("div",{style:{fontSize:18,fontWeight:800,fontFamily:mono,color:overallBudget-totalReal>=0?"#45B369":"#EF4A00"}},fmtIDR(overallBudget-totalReal))))),
 
     // Modals
-    _showAddBI[0]&&e(BudgetItemModal,{item:null,projectId:projectId,milestones:milestoneNames,categories:_cats[0],reload:reload,onClose:function(){_showAddBI[1](false)}}),
-    _editBI[0]&&e(BudgetItemModal,{item:_editBI[0],projectId:projectId,milestones:milestoneNames,categories:_cats[0],reload:reload,onClose:function(){_editBI[1](null)}}),
+    _showAddBI[0]&&e(BudgetItemModal,{item:null,projectId:projectId,milestones:milestoneNames,categories:_cats[0],costCenters:ccList,reload:reload,onClose:function(){_showAddBI[1](false)}}),
+    _editBI[0]&&e(BudgetItemModal,{item:_editBI[0],projectId:projectId,milestones:milestoneNames,categories:_cats[0],costCenters:ccList,reload:reload,onClose:function(){_editBI[1](null)}}),
     _showAddBR[0]&&e(RealizationModal,{item:null,projectId:projectId,budgetItems:bi,budgetReals:br,proj:proj,reload:reload,onClose:function(){_showAddBR[1](false)}}),
     _editBR[0]&&e(RealizationModal,{item:_editBR[0],projectId:projectId,budgetItems:bi,budgetReals:br,proj:proj,reload:reload,onClose:function(){_editBR[1](null)}}),
     _showCatMgr[0]&&e(BudgetCatManager,{categories:_cats[0],onClose:function(){_showCatMgr[1](false)},onReload:function(){apiGet("getBudgetCategories").then(function(d){if(d.ok)_cats[1](d.items||[])})}})
