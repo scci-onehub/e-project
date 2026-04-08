@@ -184,7 +184,29 @@ input[type="checkbox"]:disabled{cursor:default;opacity:.6}
   table{font-size:11px!important}
   table th,table td{padding:6px 5px!important}
 }
-@media print{.sidebar,.navbar,.btn,.edit-icon,.del-icon,.tab-btn,nav,.no-print{display:none!important}.dashboard-main{margin-left:0!important}.dashboard-main-body{padding:8px!important}.card{break-inside:avoid;border:1px solid #eee!important;box-shadow:none!important}body{background:#fff!important;font-size:11px!important;color:#1F2937!important}.overlay{display:none!important}table{page-break-inside:auto}tr{page-break-inside:avoid}thead{display:table-header-group}h3{page-break-after:avoid}@page{margin:12mm 10mm;size:A4 landscape}.print-section{page-break-before:auto}svg{max-width:100%!important}}
+@media print{
+  /* Force browsers to print background colors, gradients, and borders exactly as shown on screen */
+  *,*::before,*::after{
+    -webkit-print-color-adjust:exact!important;
+    print-color-adjust:exact!important;
+    color-adjust:exact!important;
+  }
+  /* Hide chrome */
+  .sidebar,.navbar,.btn,.edit-icon,.del-icon,.tab-btn,nav,.no-print{display:none!important}
+  .dashboard-main{margin-left:0!important}
+  .dashboard-main-body{padding:8px!important}
+  /* Cards: keep borders and backgrounds, only remove drop shadow which prints poorly */
+  .card{break-inside:avoid;box-shadow:none!important}
+  body{background:#fff!important;font-size:11px!important}
+  .overlay{display:none!important}
+  table{page-break-inside:auto}
+  tr{page-break-inside:avoid}
+  thead{display:table-header-group}
+  h3{page-break-after:avoid}
+  @page{margin:12mm 10mm;size:A4 landscape}
+  .print-section{page-break-before:auto}
+  svg{max-width:100%!important}
+}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -230,7 +252,7 @@ function apiGet(action,params){
 }
 function apiPost(action,data,id){
   var ctx=window._userCtx||{};
-  var payload=JSON.stringify({action:action,data:data,id:id,_role:ctx.role||"",_userName:ctx.name||""});
+  var payload=JSON.stringify({action:action,data:data,id:id,_role:ctx.role||"",_userName:ctx.name||"",_assignedProjects:ctx.assignedProjects||""});
   return fetch(getApiUrl(),{method:"POST",body:payload}).then(function(r){return r.json()}).then(function(d){
     if(d.message&&d.message.indexOf("API")>=0&&action!=="ping"){
       return fetch(getApiUrl()+"?action=proxy&payload="+encodeURIComponent(payload)).then(function(r){return r.json()})
@@ -250,13 +272,34 @@ function fmtNumInput(n){if(!n&&n!==0)return"";var digits=String(n).replace(/[^0-
 function parseNum(s){return Number(String(s).replace(/[^0-9.-]/g,""))||0}
 function sortByName(arr){if(!Array.isArray(arr))return arr;return arr.slice().sort(function(a,b){var na=String(a&&a.name||"").toLowerCase(),nb=String(b&&b.name||"").toLowerCase();if(!na&&nb)return 1;if(na&&!nb)return -1;if(na<nb)return -1;if(na>nb)return 1;return 0})}
 function fmtF(d){if(!d||typeof d!=="string")return"";var m=String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return"";try{var dt=new Date(d+"T00:00:00");return isNaN(dt.getTime())?"":dt.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}catch(e){return""}}
+// Multi-assignee helpers — assignee field can hold multiple comma-separated names.
+// All collaborators are equal — first name in list has no special "owner" status.
+function parseAssignees(s){if(!s||typeof s!=="string")return[];return s.split(",").map(function(n){return n.trim()}).filter(Boolean)}
+function hasAssignee(s,userName){if(!s||!userName)return false;var ln=userName.toLowerCase();return parseAssignees(s).some(function(n){return n.toLowerCase()===ln})}
+function formatAssignees(s){return parseAssignees(s).join(", ")}
 function pct(n){return Math.round(n*1000)/10}
 function sc(s){var sl=(s||"").toLowerCase();return sl==="done"?"#45B369":sl==="in progress"?"#FF9F29":sl==="pending review"?"#8B5CF6":"#9CA3AF"}
 function rc(l){return l==="HIGH"?"#EF4A00":l==="MEDIUM"?"#FF9F29":"#45B369"}
 function rbg(l){return l==="HIGH"?"rgba(239,74,0,.1)":l==="MEDIUM"?"rgba(255,159,41,.08)":"rgba(69,179,105,.06)"}
 function tprog(t){var s=(t.taskStatus||"Not Started").toLowerCase();return s==="done"?100:s==="in progress"?50:0}
 function getCM(){var n=new Date();return n.getMonth()}
-function compRS(risks){var s={HIGH:10,MEDIUM:5,LOW:2},o=risks.filter(function(r){return r.status==="Open"}),t=o.reduce(function(a,r){return a+(s[r.level]||0)},0),m=risks.reduce(function(a,r){return a+(s[r.level]||0)},0);return{score:t,max:m,pct:m>0?Math.round(t/m*100):0}}
+// compRS — Risk Score computation (Option C: impact × likelihood, normalized to 25)
+// For each OPEN risk, score = impact × likelihood (1-25 scale).
+// Aggregate = average score across all open risks.
+// Percentage = (avg / 25) × 100, so 25 (max possible) maps to 100% CRITICAL.
+// This aligns with the Heat Map cells which show the same impact × likelihood values.
+// Closed risks are excluded entirely (they no longer pose risk).
+// If a risk has no impact/likelihood data, defaults to 3×3 = 9.
+function compRS(risks){
+  var open=risks.filter(function(r){return r.status==="Open"});
+  if(open.length===0)return{score:0,max:25,pct:0};
+  var totalScore=open.reduce(function(a,r){
+    var imp=Number(r.impact)||3,lik=Number(r.likelihood)||3;
+    return a+(imp*lik);
+  },0);
+  var avgScore=totalScore/open.length;
+  return{score:Math.round(avgScore*10)/10,max:25,pct:Math.round(avgScore/25*100)};
+}
 function getRL(p){if(p>=70)return{level:"CRITICAL",color:"#C43902",emoji:"\uD83D\uDD34"};if(p>=40)return{level:"HIGH",color:"#FF9F29",emoji:"\uD83D\uDFE1"};if(p>=15)return{level:"MODERATE",color:"#487FFF",emoji:"\uD83D\uDD35"};return{level:"LOW",color:"#45B369",emoji:"\uD83D\uDFE2"}}
 var plannedCurve=[0,2,5,12,22,35,50,65,78,88,95,100]; // fallback only
 
@@ -716,7 +759,7 @@ function LoginModal(p){
     apiGet("auth",{user:_u[0],pass:_p2[0]}).then(function(d){
       if(d.ok){
         if(d.mustChangePassword){p.onForceChange(d);return}
-        p.onLogin(d.role||"bod",d.name||_u[0],d.assignedProjects||"",d.photo||"",d.allowedModules||"",_u[0]);if(p.onClose)p.onClose()
+        p.onLogin(d.role||"bod",d.name||_u[0],d.assignedProjects||"",d.photo||"",d.allowedModules||"",_u[0],d.position||"");if(p.onClose)p.onClose()
       }else _err[1]("Invalid credentials")
     }).catch(function(){_err[1]("Connection error")}).finally(function(){_loading[1](false)})
   }
@@ -816,14 +859,14 @@ function LoginModal(p){
 // ══════════════════════════════════════════
 function ProjectModal(p){
   var proj=p.project||{};
-  var mob=useMobile();var _n=useState(proj.name||""),_c=useState(proj.client||""),_m=useState(proj.manager||""),_d=useState(proj.description||""),_sd=useState(proj.startDate||new Date().toISOString().slice(0,10)),_ed=useState(proj.endDate||"2026-12-31"),_pp=useState(String((proj.planPct||0))),_st=useState(proj.status||"Active"),_pri=useState(proj.priority||"Medium"),_city=useState(proj.city||""),_prov=useState(proj.province||""),_country=useState(proj.country||""),_cls=useState(proj.classification||"Domestic"),_tpl=useState(!proj.id?"seed":""),_saving=useState(false),_confirmDel=useState(false),_ob=useState(String(proj.overallBudget||"")),_obj=useState(proj.objective||"");
+  var mob=useMobile();var _n=useState(proj.name||""),_c=useState(proj.client||""),_m=useState(proj.manager||""),_d=useState(proj.description||""),_sd=useState(proj.startDate||new Date().toISOString().slice(0,10)),_ed=useState(proj.endDate||"2026-12-31"),_pp=useState(String((proj.planPct||0))),_st=useState(proj.status||"Active"),_pri=useState(proj.priority||"Medium"),_city=useState(proj.city||""),_prov=useState(proj.province||""),_country=useState(proj.country||""),_cls=useState(proj.classification||"Domestic"),_tpl=useState(!proj.id?"seed":""),_saving=useState(false),_confirmDel=useState(false),_ob=useState(String(proj.overallBudget||"")),_obj=useState(proj.objective||""),_isTpl=useState(proj.isTemplate==="true"||proj.isTemplate===true);
   var _templates=useState([]);
   useEffect(function(){if(!proj.id)apiGet("getProjectTemplates").then(function(d){if(d.ok)_templates[1](d.items||[])})},[]);
   function save(){
     if(!_n[0].trim()){showToast("Project name is required","error");return}
     if(!_m[0].trim()){showToast("Manager name is required","error");return}
     _saving[1](true);
-    var data={name:_n[0],client:_c[0],manager:_m[0],description:_d[0],startDate:_sd[0],endDate:_ed[0],status:_st[0],priority:_pri[0],city:_city[0],province:_prov[0],country:_country[0],classification:_cls[0],overallBudget:Number(_ob[0])||0,objective:_obj[0]};
+    var data={name:_n[0],client:_c[0],manager:_m[0],description:_d[0],startDate:_sd[0],endDate:_ed[0],status:_st[0],priority:_pri[0],city:_city[0],province:_prov[0],country:_country[0],classification:_cls[0],overallBudget:Number(_ob[0])||0,objective:_obj[0],isTemplate:_isTpl[0]};
     var action=proj.id?"updateProject":"addProject";
     var promise=proj.id?apiPostT(action,data,proj.id,"Project updated"):apiPostT(action,data,null,"Project created");
     promise.then(function(res){
@@ -864,6 +907,13 @@ function ProjectModal(p){
     // Location: Country → Province → City (API-driven cascade)
     e(LocationCascade,{country:_country[0],province:_prov[0],city:_city[0],countryCode:proj.countryCode||"",stateCode:proj.stateCode||"",mob:mob,
       onChange:function(loc){if(loc.country!==undefined)_country[1](loc.country);if(loc.province!==undefined)_prov[1](loc.province);if(loc.city!==undefined)_city[1](loc.city)}}),
+    // Is Template toggle (edit mode only)
+    proj.id&&e("div",{style:{marginBottom:16,padding:14,background:_isTpl[0]?"rgba(255,159,41,.08)":"var(--bg-surface)",borderRadius:8,border:_isTpl[0]?"1px solid rgba(255,159,41,.4)":"1px solid var(--border)"}},
+      e("label",{style:{display:"flex",alignItems:"center",gap:10,cursor:"pointer",fontSize:13}},
+        e("input",{type:"checkbox",checked:_isTpl[0],onChange:function(){_isTpl[1](!_isTpl[0])},style:{width:16,height:16}}),
+        e("div",null,
+          e("div",{style:{fontWeight:700,color:_isTpl[0]?"#FF9F29":"var(--text-primary)"}},"\uD83D\uDCCB Mark as Template"),
+          e("div",{style:{fontSize:11,color:"var(--text-tertiary)",marginTop:2}},"Template projects are hidden from dashboards and can be duplicated to create new real projects")))),
     !proj.id&&e("div",{style:{marginBottom:16,padding:14,background:"var(--bg-surface)",borderRadius:8}},
       e("label",{className:"label",style:{color:"#487FFF"}},"\uD83D\uDCCB Project Template"),
       e("select",{className:"select",value:_tpl[0],onChange:function(ev){_tpl[1](ev.target.value)},style:{background:"var(--bg-card)"}},
@@ -1526,14 +1576,14 @@ function TransformasiView(p){
     // Header
     e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}},
       e("div",null,
-        e("h2",{style:{fontSize:18,fontWeight:800,color:"var(--text-primary)",lineHeight:1.4}},p.isExtGuest?proj.name:["Ringkasan Analisis Kinerja (",currentMonth,"): ",e("br",{key:"br"}),proj.name]),
-        e("p",{style:{fontSize:12,color:"var(--text-tertiary)",marginTop:4}},"PT Surveyor Carbon Consulting Indonesia")),
+        e("h2",{style:{fontSize:22,fontWeight:800,color:"var(--text-primary)",lineHeight:1.4}},p.isExtGuest?proj.name:["Ringkasan Analisis Kinerja (",currentMonth,"): ",e("br",{key:"br"}),proj.name]),
+        e("p",{style:{fontSize:13,color:"var(--text-tertiary)",marginTop:4}},"PT Surveyor Carbon Consulting Indonesia")),
       e("span",{style:{fontSize:11,fontWeight:600,padding:"6px 14px",borderRadius:6,background:overallStatus==="Completed"?"rgba(69,179,105,.1)":overallStatus==="On-Progress"?"rgba(255,159,41,.1)":"var(--bg-surface)",color:overallStatus==="Completed"?"#45B369":overallStatus==="On-Progress"?"#FF9F29":"var(--text-tertiary)"}},overallStatus)),
 
     // Target section
     e("div",{className:"card",style:{padding:"16px 20px",marginBottom:20,borderLeft:"4px solid #1E3A5F"}},
-      e("div",{style:{fontSize:13,fontWeight:700,color:"#1E3A5F",fontStyle:"italic",marginBottom:8}},"Target Final Iconic Moves/Program Unggulan"),
-      e("div",{style:{fontSize:12,color:"var(--text-secondary)"}},
+      e("div",{style:{fontSize:15,fontWeight:700,color:"#1E3A5F",fontStyle:"italic",marginBottom:8}},"Target Final Iconic Moves/Program Unggulan"),
+      e("div",{style:{fontSize:14,color:"var(--text-secondary)"}},
         "Rencana Tahun "+new Date().getFullYear()+" :",
         e("div",{style:{marginTop:4,paddingLeft:16}},"\u2022 "+proj.name+" (Target: "+(proj.endDate?fmtF(proj.endDate):"TBD")+")"))),
 
@@ -1544,31 +1594,31 @@ function TransformasiView(p){
     e("div",{className:"card",style:{borderRadius:"0 0 6px 6px",overflow:"hidden",marginBottom:20}},
       e("table",{style:{width:"100%",borderCollapse:"collapse"}},
         e("thead",null,e("tr",{style:{background:"var(--bg-surface)"}},
-          e("th",{style:{width:"40%",textAlign:"left",padding:"10px 16px",fontSize:12,fontWeight:700,color:"#487FFF",borderBottom:"2px dotted var(--border)"}},"Planning/ Target Q1-Q4"),
-          e("th",{style:{width:"40%",textAlign:"left",padding:"10px 16px",fontSize:12,fontWeight:700,borderBottom:"2px dotted var(--border)"}},"Pencapaian Target"),
-          e("th",{style:{width:"20%",textAlign:"center",padding:"10px 16px",fontSize:12,fontWeight:700,borderBottom:"2px dotted var(--border)"}},"Target Waktu"))),
+          e("th",{style:{width:"40%",textAlign:"left",padding:"10px 16px",fontSize:13,fontWeight:700,color:"#487FFF",borderBottom:"2px dotted var(--border)"}},"Planning/ Target Q1-Q4"),
+          e("th",{style:{width:"40%",textAlign:"left",padding:"10px 16px",fontSize:13,fontWeight:700,borderBottom:"2px dotted var(--border)"}},"Pencapaian Target"),
+          e("th",{style:{width:"20%",textAlign:"center",padding:"10px 16px",fontSize:13,fontWeight:700,borderBottom:"2px dotted var(--border)"}},"Target Waktu"))),
         e("tbody",null,milestones.map(function(m,mi){
           var mileTasks=tasks.filter(function(t){return(t.milestone?t.milestone.name:t.name)===m.name});
           var achievementStatus=m.status==="Done"?"(Completed)":m.status==="In Progress"?"(on-progress)":"(terjadwal)";
           return e("tr",{key:mi,style:{borderBottom:"2px dotted var(--border)"}},
             // Planning column
-            e("td",{style:{padding:"12px 16px",verticalAlign:"top",fontSize:12}},
+            e("td",{style:{padding:"12px 16px",verticalAlign:"top",fontSize:14}},
               e("div",{style:{fontWeight:600,marginBottom:6}},m.name),
               mileTasks.map(function(t,ti){return e("div",{key:ti,style:{color:"var(--text-secondary)",paddingLeft:8,marginBottom:2}},(ti+1)+". "+t.name)})),
             // Achievement column
-            e("td",{style:{padding:"12px 16px",verticalAlign:"top",fontSize:12}},
+            e("td",{style:{padding:"12px 16px",verticalAlign:"top",fontSize:14}},
               e("div",{style:{fontWeight:m.status==="In Progress"?700:400,color:m.status==="In Progress"?"var(--text-primary)":"var(--text-secondary)"}},m.name+" "+achievementStatus),
               m.status==="In Progress"&&mileTasks.map(function(t,ti){
                 var tSt=(t.taskStatus||"").toLowerCase();
                 var label=tSt==="done"?"(completed)":tSt==="in progress"?"(on-progress)":"(terjadwal)";
                 return e("div",{key:ti,style:{color:"var(--text-secondary)",paddingLeft:8,marginBottom:2,fontWeight:tSt==="in progress"?600:400}},(ti+1)+". "+t.name+" "+label)})),
             // Target date column
-            e("td",{style:{padding:"12px 16px",verticalAlign:"top",fontSize:12,textAlign:"center",color:"var(--text-secondary)"}},getQRange(m.date)))
+            e("td",{style:{padding:"12px 16px",verticalAlign:"top",fontSize:14,textAlign:"center",color:"var(--text-secondary)"}},getQRange(m.date)))
         })))),
 
     // Summary
     e("div",{style:{borderTop:"3px dashed #1CD4C6",paddingTop:12}},
-      e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7}},
+      e("div",{style:{fontSize:14,color:"var(--text-secondary)",lineHeight:1.7}},
         e("strong",null,"Ringkasan Analisis Kinerja (",currentMonth,"): ",proj.name," "),
         latestReport?latestReport.summary||"No significant updates":"No significant updates"))
   )
@@ -1582,7 +1632,10 @@ function ExternalCheckpointView(p){
   useEffect(function(){load()},[projectId]);
   if(_loading[0]||!_data[0]||!_data[0].project)return e(Spinner);
 
-  var data=_data[0],proj=data.project,tasks=data.tasks||[],risks=data.risks||[],weeklyReps=data.weeklyReports||[];
+  var data=_data[0],proj=data.project,tasks=data.tasks||[],risks=data.risks||[],allWeeklyReps=data.weeklyReports||[];
+  // External view shows only Published (or legacy Submitted/Reviewed) reports.
+  // Drafts are hidden — only the project owner sees Drafts in the internal view.
+  var weeklyReps=allWeeklyReps.filter(function(w){var st=w.status||"Draft";return st==="Published"||st==="Reviewed"||st==="Submitted"});
   var kendala=data.kendala||[],tindakLanjut=data.tindakLanjut||[];
   var totalTasks=tasks.length,doneTasks=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
   var overall=totalTasks>0?Math.round(doneTasks/totalTasks*100):0;
@@ -1653,14 +1706,14 @@ function ExternalCheckpointView(p){
         e("h2",{style:{fontSize:20,fontWeight:800,color:"var(--text-primary)"}},p.isExtGuest?e("span",{style:{color:"#487FFF"}},proj.name.toUpperCase()):["SURVEYOR INDONESIA ",e("span",{key:"pn",style:{color:"#487FFF"}},proj.name.toUpperCase())]),
         e("p",{style:{fontSize:12,color:"var(--text-tertiary)",marginTop:4}},"PT Surveyor Carbon Consulting Indonesia")),
       e("div",{style:{display:"flex",flexDirection:"column",gap:8,alignItems:"flex-end"}},
-        e("div",{style:{background:"var(--bg-surface)",border:"1px solid var(--border)",borderRadius:8,padding:"6px 14px",fontSize:11,color:"var(--text-secondary)",fontWeight:600,whiteSpace:"nowrap"}},"Update as of "+new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})),
+        e("div",{style:{background:"var(--bg-surface)",border:"1px solid var(--border)",borderRadius:8,padding:"6px 14px",fontSize:11,color:"var(--text-secondary)",fontWeight:600,whiteSpace:"nowrap"}},latestReport&&latestReport.weekStart?"Update as of "+fmtF(latestReport.weekStart)+" \u2014 "+fmtF(latestReport.weekEnd):"Update as of "+new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})),
         p.onFeedback&&e("button",{className:"btn btn-ghost",style:{fontSize:12,border:"1px solid var(--accent)",color:"var(--accent)"},onClick:p.onFeedback},"\uD83D\uDCDD Feedback Form"))),
 
     // Row 1: Overview + Activities + Actions/Risks
     e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:14,marginBottom:16}},
       // Project Overview
       e("div",{className:"card",style:{padding:"16px 20px"}},
-        e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Project Overview"),
+        e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Project Overview"),
         e("div",{style:{background:overallOk?"#45B369":"#FF9F29",color:"#fff",borderRadius:8,padding:"10px",textAlign:"center",fontWeight:700,fontSize:13,marginBottom:12}},overallOk?"Overall: On-Track":"Overall: Needs Attention"),
         e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
           e(Badge2,{ok:isOnSchedule,label:"On-Schedule"}),
@@ -1670,129 +1723,212 @@ function ExternalCheckpointView(p){
 
       // Weekly Key Activities
       e("div",{className:"card",style:{padding:"16px 20px"}},
-        e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Weekly Key Activities"),
+        e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Weekly Key Activities"),
         latestReport&&latestReport.summary?e("div",null,
           latestReport.summary.split(/\.\s+|;\s+|\n/).filter(function(s){return s.trim()}).map(function(s,i){
-            return e("div",{key:i,style:{fontSize:12,color:"var(--text-secondary)",padding:"4px 0",lineHeight:1.6,borderBottom:"1px solid var(--border-light)"}},"\u2022 "+s.trim().replace(/\.$/,""))})):
+            return e("div",{key:i,style:{fontSize:13,color:"var(--text-secondary)",padding:"4px 0",lineHeight:1.6,borderBottom:"1px solid var(--border-light)"}},"\u2022 "+s.trim().replace(/\.$/,""))})):
         e("div",null,
-          inProgress.length>0&&e("div",null,inProgress.map(function(t,i){return e("div",{key:i,style:{fontSize:12,color:"var(--text-secondary)",padding:"4px 0",borderBottom:"1px solid var(--border-light)"}},"• "+t.name+" (in progress)")})),
-          recentDone.length>0&&e("div",{style:{marginTop:8}},recentDone.slice(0,3).map(function(t,i){return e("div",{key:i,style:{fontSize:12,color:"var(--text-tertiary)",padding:"4px 0"}},"• "+t.name+" (completed)")})),
-          inProgress.length===0&&recentDone.length===0&&e("div",{style:{fontSize:12,color:"var(--text-hint)"}},"No recent activity"))),
+          inProgress.length>0&&e("div",null,inProgress.map(function(t,i){return e("div",{key:i,style:{fontSize:13,color:"var(--text-secondary)",padding:"4px 0",borderBottom:"1px solid var(--border-light)"}},"• "+t.name+" (in progress)")})),
+          recentDone.length>0&&e("div",{style:{marginTop:8}},recentDone.slice(0,3).map(function(t,i){return e("div",{key:i,style:{fontSize:13,color:"var(--text-tertiary)",padding:"4px 0"}},"• "+t.name+" (completed)")})),
+          inProgress.length===0&&recentDone.length===0&&e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No recent activity"))),
 
       // Management Actions + Risk & Issues
       e("div",null,
         e("div",{className:"card",style:{padding:"16px 20px",marginBottom:14}},
-          e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Management Action(s) Required"),
-          e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7}},latestReport&&latestReport.decisions?latestReport.decisions:"No action required.")),
+          e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Management Action(s) Required"),
+          e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7}},latestReport&&latestReport.decisions?latestReport.decisions:"No action required.")),
         e("div",{className:"card",style:{padding:"16px 20px"}},
-          e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Risk & Issue(s)"),
-          openRisks.length>0?openRisks.slice(0,3).map(function(r,i){return e("div",{key:i,style:{fontSize:12,color:"var(--text-secondary)",padding:"4px 0",borderBottom:"1px solid var(--border-light)"}},"• "+r.title)}):
-          e("div",{style:{fontSize:12,color:"var(--text-hint)"}},"No open risks."),
-          latestReport&&latestReport.challenges&&e("div",{style:{fontSize:12,color:"#FF9F29",marginTop:8,fontWeight:600}},latestReport.challenges)))),
+          e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Risk & Issue(s)"),
+          openRisks.length>0?openRisks.slice(0,3).map(function(r,i){return e("div",{key:i,style:{fontSize:13,color:"var(--text-secondary)",padding:"4px 0",borderBottom:"1px solid var(--border-light)"}},"• "+r.title)}):
+          e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No open risks."),
+          latestReport&&latestReport.challenges&&e("div",{style:{fontSize:13,color:"#FF9F29",marginTop:8,fontWeight:600}},latestReport.challenges)))),
 
     // Row 2: This Week vs Last Week
     (latestReport||prevReport)&&e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginBottom:16}},
       e("div",{className:"card",style:{padding:"16px 20px",borderLeft:"4px solid var(--border)"}},
         e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
-          e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)"}},"Last Week"),
-          prevReport&&e("span",{style:{fontSize:10,color:"var(--text-tertiary)"}},fmtF(prevReport.weekStart)+" \u2014 "+fmtF(prevReport.weekEnd))),
+          e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)"}},"Last Week"),
+          prevReport&&e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},fmtF(prevReport.weekStart)+" \u2014 "+fmtF(prevReport.weekEnd))),
         prevReport?e("div",null,
-          prevReport.summary&&e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7,marginBottom:10}},prevReport.summary),
+          prevReport.summary&&e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,marginBottom:10}},prevReport.summary),
           prevReport.achievements&&e("div",null,
-            e("div",{style:{fontSize:11,fontWeight:600,color:"#45B369",marginBottom:4}},"Achievements"),
-            e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},prevReport.achievements)),
+            e("div",{style:{fontSize:12,fontWeight:600,color:"#45B369",marginBottom:4}},"Achievements"),
+            e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},prevReport.achievements)),
           prevReport.nextWeekPlan&&e("div",{style:{marginTop:8}},
-            e("div",{style:{fontSize:11,fontWeight:600,color:"#487FFF",marginBottom:4}},"Planned for This Week"),
-            e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},prevReport.nextWeekPlan))
-        ):e("div",{style:{fontSize:12,color:"var(--text-hint)"}},"No previous report.")),
+            e("div",{style:{fontSize:12,fontWeight:600,color:"#487FFF",marginBottom:4}},"Planned for This Week"),
+            e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},prevReport.nextWeekPlan))
+        ):e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No previous report.")),
       e("div",{className:"card",style:{padding:"16px 20px",borderLeft:"4px solid #487FFF"}},
         e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
-          e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)"}},"This Week"),
-          latestReport&&e("span",{style:{fontSize:10,color:"var(--text-tertiary)"}},fmtF(latestReport.weekStart)+" \u2014 "+fmtF(latestReport.weekEnd))),
+          e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)"}},"This Week"),
+          latestReport&&e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},fmtF(latestReport.weekStart)+" \u2014 "+fmtF(latestReport.weekEnd))),
         latestReport?e("div",null,
-          latestReport.summary&&e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7,marginBottom:10}},latestReport.summary),
+          latestReport.summary&&e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,marginBottom:10}},latestReport.summary),
           latestReport.achievements&&e("div",null,
-            e("div",{style:{fontSize:11,fontWeight:600,color:"#45B369",marginBottom:4}},"New Achievements"),
-            e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport.achievements)),
+            e("div",{style:{fontSize:12,fontWeight:600,color:"#45B369",marginBottom:4}},"New Achievements"),
+            e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport.achievements)),
           latestReport.challenges&&e("div",{style:{marginTop:8}},
-            e("div",{style:{fontSize:11,fontWeight:600,color:"#FF9F29",marginBottom:4}},"Current Challenges"),
-            e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport.challenges))
-        ):e("div",{style:{fontSize:12,color:"var(--text-hint)"}},"No report submitted this week."))
+            e("div",{style:{fontSize:12,fontWeight:600,color:"#FF9F29",marginBottom:4}},"Current Challenges"),
+            e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport.challenges))
+        ):e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No report submitted this week."))
     ),
 
     // Row 3: Progress Update + Kendala + Tindak Lanjut
     e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:14,marginBottom:16}},
       // Progress Update
       e("div",{className:"card",style:{padding:"16px 20px",borderTop:"3px solid #487FFF"}},
-        e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Progress Update"),
-        e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport&&latestReport.achievements?latestReport.achievements:"No updates this period.")),
+        e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Progress Update"),
+        e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport&&latestReport.achievements?latestReport.achievements:"No updates this period.")),
 
       // Kendala — structured if available, fallback to free text
       e("div",{className:"card",style:{padding:"16px 20px",borderTop:"3px solid #FF9F29"}},
-        e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Kendala"),
+        e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Kendala"),
         kendala.filter(function(k){return k.status==="Open"}).length>0
           ?kendala.filter(function(k){return k.status==="Open"}).map(function(k,i){
             return e("div",{key:k.id,style:{marginBottom:10,paddingBottom:8,borderBottom:i<kendala.filter(function(k2){return k2.status==="Open"}).length-1?"1px solid var(--border-light)":"none"}},
-              k.milestoneName&&e("div",{style:{fontSize:10,fontWeight:600,color:"#487FFF",marginBottom:2}},k.milestoneName),
-              e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.6}},k.description))})
-          :e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport&&latestReport.challenges?latestReport.challenges:"No obstacles reported.")),
+              k.milestoneName&&e("div",{style:{fontSize:11,fontWeight:600,color:"#487FFF",marginBottom:2}},k.milestoneName),
+              e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.6}},k.description))})
+          :e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport&&latestReport.challenges?latestReport.challenges:"No obstacles reported.")),
 
       // Tindak Lanjut — structured if available, fallback to free text
       e("div",{className:"card",style:{padding:"16px 20px",borderTop:"3px solid #45B369"}},
-        e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Tindak Lanjut"),
+        e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Tindak Lanjut"),
         tindakLanjut.filter(function(t){return t.status!=="Done"}).length>0
           ?tindakLanjut.filter(function(t){return t.status!=="Done"}).map(function(tl,i){
             return e("div",{key:tl.id,style:{marginBottom:8,paddingBottom:6,borderBottom:i<tindakLanjut.filter(function(t2){return t2.status!=="Done"}).length-1?"1px solid var(--border-light)":"none"}},
-              e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.6}},tl.action),
+              e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.6}},tl.action),
               e("div",{style:{display:"flex",gap:8,marginTop:3}},
-                tl.dueDate&&e("span",{style:{fontSize:10,color:"var(--text-tertiary)",fontFamily:mono}},fmtF(tl.dueDate)),
-                tl.assignee&&e("span",{style:{fontSize:10,color:"var(--text-tertiary)"}},tl.assignee),
+                tl.dueDate&&e("span",{style:{fontSize:11,color:"var(--text-tertiary)",fontFamily:mono}},fmtF(tl.dueDate)),
+                tl.assignee&&e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},tl.assignee),
                 tl.kendalaDesc&&e("span",{style:{fontSize:9,color:"#FF9F29"}},"re: "+tl.kendalaDesc)))})
-          :e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport&&latestReport.nextWeek?latestReport.nextWeek:"No follow-up actions."))),
+          :e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport&&latestReport.nextWeek?latestReport.nextWeek:"No follow-up actions."))),
 
     // Row 4: Milestone Table
     e("div",{className:"card",style:{marginBottom:16,overflow:"hidden"}},
       e("div",{style:{padding:"16px 20px",borderBottom:"1px solid var(--border)"}},
-        e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)"}},"Project Milestones")),
+        e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)"}},"Project Milestones")),
       e("div",{style:{overflowX:"auto"}},
         e("table",null,
-          e("thead",null,e("tr",null,["#","Key Milestones","Due Date","PoC","Status","Action / Results"].map(function(h){return e("th",{key:h},h)}))),
+          e("thead",null,e("tr",null,["#","Key Milestones","Due Date","PoC","Status","Action / Results"].map(function(h){return e("th",{key:h,style:{fontSize:13}},h)}))),
           e("tbody",null,milestones.map(function(m,i){
             var isActive=m.status==="In Progress";
-            return e("tr",{key:i,style:{color:isActive?"#487FFF":"inherit",fontWeight:isActive?600:400}},
+            return e("tr",{key:i,style:{color:isActive?"#487FFF":"inherit",fontWeight:isActive?600:400,fontSize:13}},
               e("td",null,i+1),
-              e("td",{style:{fontWeight:600}},m.name),
-              e("td",{style:{fontFamily:mono,fontSize:12}},m.date||"\u2014"),
-              e("td",null,e("span",{style:{fontFamily:mono,fontWeight:700,color:m.poc===100?"#45B369":m.poc>0?"#487FFF":"var(--text-tertiary)"}},m.poc+"%")),
-              e("td",null,e("span",{style:{fontSize:11,fontWeight:600,padding:"2px 10px",borderRadius:4,background:m.status==="Done"?"rgba(69,179,105,.1)":m.status==="In Progress"?"rgba(255,159,41,.1)":"var(--bg-surface)",color:m.status==="Done"?"#45B369":m.status==="In Progress"?"#FF9F29":"var(--text-tertiary)"}},m.status)),
-              e("td",{style:{fontSize:12,color:"var(--text-tertiary)"}},m.status==="Done"?"Completed":m.inProgress>0?m.done+"/"+m.total+" done, "+m.inProgress+" in progress":m.done>0?m.done+"/"+m.total+" done":"\u2014"))}))))),
+              e("td",{style:{fontWeight:600,fontSize:13}},m.name),
+              e("td",{style:{fontFamily:mono,fontSize:13}},m.date||"\u2014"),
+              e("td",null,e("span",{style:{fontFamily:mono,fontWeight:700,fontSize:13,color:m.poc===100?"#45B369":m.poc>0?"#487FFF":"var(--text-tertiary)"}},m.poc+"%")),
+              e("td",null,e("span",{style:{fontSize:12,fontWeight:600,padding:"3px 11px",borderRadius:4,background:m.status==="Done"?"rgba(69,179,105,.1)":m.status==="In Progress"?"rgba(255,159,41,.1)":"var(--bg-surface)",color:m.status==="Done"?"#45B369":m.status==="In Progress"?"#FF9F29":"var(--text-tertiary)"}},m.status)),
+              e("td",{style:{fontSize:13,color:"var(--text-tertiary)"}},m.status==="Done"?"Completed":m.inProgress>0?m.done+"/"+m.total+" done, "+m.inProgress+" in progress":m.done>0?m.done+"/"+m.total+" done":"\u2014"))}))))),
 
-    // Row 5: Risk Heat Map
-    openRisks.length>0&&e("div",{className:"card",style:{padding:"20px 24px",marginBottom:16}},
-      e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Risk Heat Map"),
-      e(HeatMap5x5,{risks:risks})),
-
-    // Row 5b: 5M Fish Diagram
-    project5M&&e("div",{style:{marginBottom:16}},e(FishDiagram5M,{data:project5M,projectName:proj.name,objective:proj.objective})),
+    // Row 5: Project Roadmap (Gantt)
+    e("div",{style:{marginBottom:16}},
+      e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Project Roadmap"),
+      e(ProjGantt,{tasks:tasks,collapsed:true})),
 
     // Row 6: S-Curve
     e("div",{style:{marginBottom:16}},
-      e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"S-Curve Project Progress"),
+      e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"S-Curve Project Progress"),
       e(ProjSCurve,{tasks:tasks,metrics:{overall:overall,ct:doneTasks,tt:totalTasks,ds:doneTasks,ts:totalTasks,variance:variance},proj:proj})),
 
-    // Row 7: Project Roadmap (Gantt - collapsed by default)
-    e("div",{style:{marginBottom:16}},
-      e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Project Roadmap"),
-      e(ProjGantt,{tasks:tasks,collapsed:true}))
+    // Row 7: 5M Fish Diagram
+    project5M&&e("div",{style:{marginBottom:16}},e(FishDiagram5M,{data:project5M,projectName:proj.name,objective:proj.objective})),
+
+    // Row 8: Risk Heat Map
+    openRisks.length>0&&e("div",{className:"card",style:{padding:"20px 24px",marginBottom:16}},
+      e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Risk Heat Map"),
+      e(HeatMap5x5,{risks:risks})),
+
+    // Row 9: Risk Register (read-only list of all risks)
+    risks.length>0&&e("div",{className:"card",style:{padding:"20px 24px",marginBottom:16}},
+      e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Risk Register ("+risks.length+")"),
+      e("div",{style:{display:"flex",flexDirection:"column",gap:12}},
+        risks.map(function(r,i){
+          var lvl=(r.level||"LOW").toUpperCase();
+          var lvlColor=lvl==="HIGH"?"#EF4A00":lvl==="MEDIUM"?"#FF9F29":"#45B369";
+          var lvlBg=lvl==="HIGH"?"rgba(239,74,0,.1)":lvl==="MEDIUM"?"rgba(255,159,41,.1)":"rgba(69,179,105,.1)";
+          var status=r.status||"Open";
+          var statusColor=status==="Closed"?"#45B369":status==="Open"?"#FF9F29":"var(--text-tertiary)";
+          var imp=Number(r.impact)||3,lik=Number(r.likelihood)||3;
+          var linkedTask=null;
+          if(r.linkedTaskId){var lt=tasks.filter(function(t){return t.id===r.linkedTaskId})[0];if(lt)linkedTask=lt.name}
+          return e("div",{key:r.id||i,style:{padding:"12px 14px",borderRadius:8,background:"var(--bg-surface)",border:"1px solid var(--border)"}},
+            e("div",{style:{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:6}},
+              e("span",{style:{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:4,background:lvlBg,color:lvlColor}},lvl),
+              e("span",{style:{fontSize:11,fontWeight:600,color:statusColor}},status),
+              e("span",{style:{fontSize:11,fontFamily:mono,color:"var(--text-tertiary)"}},"I:"+imp+"\u00D7L:"+lik+"="+(imp*lik)),
+              r.category&&e("span",{style:{fontSize:11,padding:"2px 8px",borderRadius:4,background:"var(--bg-hover)",color:"var(--text-secondary)"}},r.category)),
+            e("div",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)",marginBottom:4}},r.title),
+            r.mitigation&&e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.5}},r.mitigation),
+            linkedTask&&e("div",{style:{fontSize:12,color:"#487FFF",marginTop:4}},"\uD83D\uDD17 "+linkedTask)
+          )
+        })))
     ) // end checkpoint format div
   )
 }
 
+function DuplicateProjectModal(p){
+  var src=p.source||{};
+  var _name=useState((src.name||"")+" (Copy)"),_start=useState(new Date().toISOString().slice(0,10)),_manager=useState(src.manager||""),_client=useState(src.client||"");
+  var _copyRisks=useState(false),_copyBudget=useState(true),_copyStake=useState(false),_copy5M=useState(true);
+  var _clearDates=useState(false),_clearAssignees=useState(true);
+  var _saving=useState(false),_err=useState("");
+  function save(){
+    if(!_name[0].trim()){_err[1]("Project name is required");return}
+    if(!_start[0]){_err[1]("Start date is required");return}
+    _saving[1](true);_err[1]("");
+    apiPost("duplicateProject",{sourceId:src.id,copyRisks:_copyRisks[0],copyBudget:_copyBudget[0],copyStakeholders:_copyStake[0],copy5M:_copy5M[0],clearDates:_clearDates[0],clearAssignees:_clearAssignees[0],data:{name:_name[0].trim(),startDate:_start[0],manager:_manager[0],client:_client[0]}})
+      .then(function(r){_saving[1](false);if(r&&r.ok){
+        showToast("Project duplicated: "+(r.copied?r.copied.tasks+" tasks copied":""),"success");
+        if(p.onCreated)p.onCreated(r.id);p.onClose();
+      }else{_err[1]((r&&r.error)||"Failed to duplicate")}})
+      .catch(function(){_saving[1](false);_err[1]("Connection error")})
+  }
+  return e(Modal,{show:true,onClose:p.onClose,style:{maxWidth:560}},
+    e("h3",{style:{fontSize:17,fontWeight:700,marginBottom:6}},"\uD83D\uDCCB Duplicate Project"),
+    e("p",{style:{fontSize:12,color:"var(--text-secondary)",marginBottom:16}},"Create a new project using ",e("strong",null,src.name||"this project")," as a source. Tasks, milestones, and dates will be copied and adjusted to the new start date."),
+    _err[0]&&e("div",{style:{background:"rgba(239,74,0,.1)",color:"#EF4A00",padding:"8px 12px",borderRadius:8,fontSize:12,marginBottom:12}},_err[0]),
+    e("label",{className:"label"},"New Project Name *"),
+    e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value)},style:{marginBottom:12}}),
+    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      e("div",null,e("label",{className:"label"},"New Start Date *"),e("input",{type:"date",className:"input",value:_start[0],onChange:function(ev){_start[1](ev.target.value)}})),
+      e("div",null,e("label",{className:"label"},"Project Manager"),e("input",{className:"input",value:_manager[0],onChange:function(ev){_manager[1](ev.target.value)},placeholder:"e.g. Jemy Mustany"}))),
+    e("div",{style:{marginBottom:14}},
+      e("label",{className:"label"},"Client"),
+      e("input",{className:"input",value:_client[0],onChange:function(ev){_client[1](ev.target.value)},placeholder:"e.g. PT SCCI"})),
+    e("div",{style:{background:"var(--bg-surface)",borderRadius:8,padding:"12px 14px",marginBottom:12}},
+      e("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-tertiary)",marginBottom:8,letterSpacing:.5}},"WHAT TO COPY"),
+      e("label",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"not-allowed",opacity:.7}},
+        e("input",{type:"checkbox",checked:true,disabled:true}),"Tasks & milestones ",e("span",{style:{color:"var(--text-tertiary)",fontSize:11}},"(always copied)")),
+      e("label",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"pointer"}},
+        e("input",{type:"checkbox",checked:_copyBudget[0],onChange:function(){_copyBudget[1](!_copyBudget[0])}}),"Budget items ",e("span",{style:{color:"var(--text-tertiary)",fontSize:11}},"(line items, not realizations)")),
+      e("label",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"pointer"}},
+        e("input",{type:"checkbox",checked:_copy5M[0],onChange:function(){_copy5M[1](!_copy5M[0])}}),"5M fish diagram ",e("span",{style:{color:"var(--text-tertiary)",fontSize:11}},"(Man, Money, Machine, Method, Market)")),
+      e("label",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"pointer"}},
+        e("input",{type:"checkbox",checked:_copyRisks[0],onChange:function(){_copyRisks[1](!_copyRisks[0])}}),"Risks ",e("span",{style:{color:"var(--text-tertiary)",fontSize:11}},"(risk register)")),
+      e("label",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"pointer"}},
+        e("input",{type:"checkbox",checked:_copyStake[0],onChange:function(){_copyStake[1](!_copyStake[0])}}),"Stakeholders")),
+    e("div",{style:{background:"var(--bg-surface)",borderRadius:8,padding:"12px 14px",marginBottom:14}},
+      e("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-tertiary)",marginBottom:8,letterSpacing:.5}},"TASK OPTIONS"),
+      e("label",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"pointer"}},
+        e("input",{type:"checkbox",checked:_clearDates[0],onChange:function(){_clearDates[1](!_clearDates[0])}}),"Clear all task dates ",e("span",{style:{color:"var(--text-tertiary)",fontSize:11}},"(PM will set manually)")),
+      e("label",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"pointer"}},
+        e("input",{type:"checkbox",checked:_clearAssignees[0],onChange:function(){_clearAssignees[1](!_clearAssignees[0])}}),"Clear task assignees ",e("span",{style:{color:"var(--text-tertiary)",fontSize:11}},"(keep department only)"))),
+    e("div",{style:{display:"flex",gap:8}},
+      e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
+      e("button",{className:"btn btn-primary",onClick:save,disabled:_saving[0]||!_name[0].trim(),style:{flex:1}},_saving[0]?"\u23F3 Duplicating...":"\uD83D\uDCCB Create Duplicate")))
+}
+
 function ProjectDetail(p){
-  var admin=p.admin,projectId=p.projectId,onBack=p.onBack,userRole=p.userRole||"viewer",userName=p.userName||"",initialTab=p.initialTab,onTabChange=p.onTabChange;
-  var canEditBudget=admin&&(userRole==="admin"||userRole==="project_owner"||userRole==="pmo");var mob=useMobile();
-  var canEdit=admin&&(userRole==="admin"||userRole==="project_admin"||userRole==="project_owner");
-  var isGuest=userRole==="guest"||userRole==="viewer";
+  var admin=p.admin,projectId=p.projectId,onBack=p.onBack,userRole=p.userRole||"",userName=p.userName||"",initialTab=p.initialTab,onTabChange=p.onTabChange;
+  // Permission checks — gm has BOD-like edit power on assigned projects, project_owner edits own projects
+  var canEditBudget=admin&&(userRole==="admin"||userRole==="project_owner"||userRole==="pmo"||userRole==="gm");
+  var canEdit=admin&&(userRole==="admin"||userRole==="project_admin"||userRole==="project_owner"||userRole==="gm");
+  // Read-only roles: cannot edit anything in the project
+  var isReadOnlyRole=userRole==="bod"||userRole==="viewer"||userRole==="external"||userRole==="collaborator";
+  // Legacy isGuest variable — kept for backward compat with existing code that uses it
+  // True for any non-editing role at the project level
+  var isGuest=isReadOnlyRole;
+  var mob=useMobile();
   var _data=useState(null),data=_data[0],setData=_data[1];
   var _loading=useState(true),_tab=useState(initialTab||"Overview"),tab=_tab[0];
   useEffect(function(){if(onTabChange)onTabChange(tab)},[tab]);
@@ -1800,6 +1936,8 @@ function ProjectDetail(p){
   var _editSubModal=useState(null);
   var _editProj=useState(false),_editTask=useState(null),_showAddTask=useState(false),_showAddMile=useState(false),_editMile=useState(null);
   var _editRisk=useState(null),_showAddRisk=useState(false);
+  var _showDup=useState(false);
+  var canCreateProject=userRole==="admin"||userRole==="project_admin"||userRole==="pmo"||userRole==="project_owner";
   var _addTaskMile=useState(null);
   var _users=useState([]);
   var _submitTask=useState(null),_rejectTask=useState(null);
@@ -1826,7 +1964,13 @@ function ProjectDetail(p){
   function editSubName(sid,nm){apiPost("updateSubtask",{name:nm},sid)}
   function editSub(s){_editSubModal[1](s)}
   function saveSubEdit(s){apiPost("updateSubtask",{name:s.name,startDate:s.startDate,endDate:s.endDate,done:s.done},s.id).then(function(){load();_editSubModal[1](null)})}
-  function saveTask(changes){var tid=_editTask[0].id;apiPost("updateTask",{name:changes.name,milestoneName:changes.milestone.name,milestoneDate:changes.milestone.date,weight:changes.weight,startDate:changes.startDate,endDate:changes.endDate,taskStatus:changes.taskStatus,startMonth:changes.startMonth,assignee:changes.assignee||"",department:changes.department||""},tid).then(function(){load();_editTask[1](null)})}
+  function saveTask(changes){
+    var tid=_editTask[0].id;
+    // Build payload — only include department if explicitly provided to preserve existing data
+    var payload={name:changes.name,milestoneName:changes.milestone.name,milestoneDate:changes.milestone.date,weight:changes.weight,startDate:changes.startDate,endDate:changes.endDate,taskStatus:changes.taskStatus,startMonth:changes.startMonth,assignee:changes.assignee||""};
+    if(changes.department!==undefined)payload.department=changes.department;
+    apiPost("updateTask",payload,tid).then(function(){load();_editTask[1](null)})
+  }
   function addTask(t){
     // Close modal immediately for instant feedback (optimistic UI)
     _showAddTask[1](false);
@@ -1859,19 +2003,29 @@ function ProjectDetail(p){
   function delTask(tid){if(confirm("Delete this task and all subtasks?"))apiPostT("deleteTask",null,tid,"Task deleted").then(load)}
   function reorderTasks(newOrder){apiPost("reorderTasks",newOrder).then(load)}
   // Approval workflow
-  var canApproveBase=userRole==="admin"||userRole==="pmo"||((userRole==="project_owner"||userRole==="project_admin")&&(proj.manager||"").toLowerCase()===(userName||"").toLowerCase());
-  function canApproveTask(t){return canApproveBase||(userRole==="bod"&&(t.assignee||"").toLowerCase()===(userName||"").toLowerCase())}
+  // GM can approve only on assigned projects — admin prop is false for non-assigned GM (set by router)
+  var canApproveBase=userRole==="admin"||userRole==="pmo"||(userRole==="gm"&&admin)||((userRole==="project_owner"||userRole==="project_admin")&&(proj.manager||"").toLowerCase()===(userName||"").toLowerCase());
+  function canApproveTask(t){return canApproveBase||(userRole==="bod"&&hasAssignee(t.assignee,userName))}
   function submitForReview(tid,note){apiPost("submitTaskForReview",{completionNote:note},tid).then(function(){load();_submitTask[1](null)})}
   function approveTask(tid){apiPost("approveTask",null,tid).then(load)}
-  function rejectTask(tid,note){apiPost("rejectTask",{rejectionNote:note},tid).then(function(){load();_rejectTask[1](null)})}
-  function saveRisk(r){var action=r._isNew?"addRisk":"updateRisk";var d={projectId:projectId,title:r.title,level:r.level,category:r.category,mitigation:r.mitigation,linkedTaskId:r.linkedTaskId||"",status:r.status||"Open"};(r._isNew?apiPost(action,d):apiPost(action,d,r.id)).then(function(){load();_editRisk[1](null);_showAddRisk[1](false)})}
+  function rejectTask(tid,note){
+    apiPost("rejectTask",{rejectionNote:note},tid).then(function(d){
+      if(d&&d.ok){
+        showToast("Task returned to PIC","success");
+        load();_rejectTask[1](null);
+      }else{
+        showToast((d&&d.error)||"Failed to return task","error");
+      }
+    }).catch(function(){showToast("Connection error","error")})
+  }
+  function saveRisk(r){var action=r._isNew?"addRisk":"updateRisk";var d={projectId:projectId,title:r.title,level:r.level,category:r.category,mitigation:r.mitigation,linkedTaskId:r.linkedTaskId||"",status:r.status||"Open",impact:r.impact!==undefined?Number(r.impact):3,likelihood:r.likelihood!==undefined?Number(r.likelihood):3};(r._isNew?apiPost(action,d):apiPost(action,d,r.id)).then(function(){load();_editRisk[1](null);_showAddRisk[1](false)})}
   function updateRS(rid,ns){apiPost("updateRisk",{status:ns},rid).then(load)}
   function delRisk(rid){if(confirm("Delete?"))apiPostT("deleteRisk",null,rid,"Risk deleted").then(load)}
   function snapshot(){var s=compRS(risks);apiPostT("addRiskSnapshot",{projectId:projectId,pct:s.pct,score:s.score,max:s.max,label:new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short"})},null,"Risk snapshot saved").then(load)}
 
   var TABS=["Overview","Gantt Chart","S-Curve","Tasks & Milestones","Risk Monitor","Budget & Resources","Issue Logs","Directory","Files","Stakeholders","Reports","Kendala"];
   if(userRole==="admin")TABS.push("Log");
-  var PRIMARY_TABS=["Overview","Tasks & Milestones","Gantt Chart","Budget & Resources","Risk Monitor"];
+  var PRIMARY_TABS=["Overview","Tasks & Milestones","Gantt Chart","S-Curve","Risk Monitor","Budget & Resources","Reports"];
   var MORE_TABS=TABS.filter(function(t){return PRIMARY_TABS.indexOf(t)<0});
 
   return e("div",{style:{animation:"fadeIn .3s ease"}},
@@ -1882,22 +2036,23 @@ function ProjectDetail(p){
       e("span",{style:{color:"var(--text-primary)",fontWeight:500}},proj.name)),
     // Project header — simplified
     e("div",{style:{marginBottom:20,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}},
-      e("div",{style:{width:40,height:40,borderRadius:10,background:"#487FFF",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:15,color:"#fff",flexShrink:0}},proj.name.charAt(0)),
+      e("div",{style:{width:40,height:40,borderRadius:10,background:proj.isTemplate==="true"?"#FF9F29":"#487FFF",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:15,color:"#fff",flexShrink:0}},proj.isTemplate==="true"?"\uD83D\uDCCB":proj.name.charAt(0)),
       e("div",{style:{flex:1,minWidth:0}},
-        e("h5",{style:{fontSize:18,fontWeight:700,color:"var(--text-primary)"}},proj.name),
+        e("h5",{style:{fontSize:18,fontWeight:700,color:"var(--text-primary)",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},proj.name,proj.isTemplate==="true"&&e("span",{style:{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,159,41,.15)",color:"#FF9F29",letterSpacing:.5}},"TEMPLATE")),
         e("div",{style:{display:"flex",gap:8,marginTop:2,flexWrap:"wrap",fontSize:12,color:"var(--text-tertiary)"}},
           proj.client&&e("span",null,proj.client),
           proj.manager&&e("span",null,"\u00B7 "+proj.manager),
           proj.city&&e("span",null,"\u00B7 "+proj.city+(proj.country?", "+proj.country:"")))),
       e("div",{style:{display:"flex",gap:6,flexShrink:0}},
         admin&&e("button",{className:"btn btn-ghost btn-sm",onClick:function(){_editProj[1](true)}},"Edit"),
+        admin&&canCreateProject&&e("button",{className:"btn btn-ghost btn-sm",style:proj.isTemplate==="true"?{background:"rgba(255,159,41,.1)",color:"#FF9F29",fontWeight:700}:{},onClick:function(){_showDup[1](true)}},"\uD83D\uDCCB Duplicate"),
         e("button",{className:"btn btn-ghost btn-sm",onClick:function(){_tab[1]("_print");setTimeout(function(){window.print();setTimeout(function(){_tab[1]("Overview")},200)},300)}},"Export"))),
 
     // Tabs — primary visible, rest under "More"
     e("div",{style:{display:"flex",gap:0,marginBottom:20,borderBottom:"2px solid var(--border)",alignItems:"center"}},
       PRIMARY_TABS.map(function(t){return e("button",{key:t,className:"tab-btn "+(tab===t?"tab-active":"tab-inactive"),onClick:function(){_tab[1](t)}},t)}),
       e("div",{style:{position:"relative"}},
-        e("button",{className:"tab-btn "+(MORE_TABS.indexOf(tab)>=0?"tab-active":"tab-inactive"),onClick:function(){_showMore[1](!_showMore[0])},style:{display:"flex",alignItems:"center",gap:4}},MORE_TABS.indexOf(tab)>=0?tab:"More",e("span",{style:{fontSize:8}},(MORE_TABS.indexOf(tab)>=0?"":" \u25BE"))),
+        e("button",{className:"tab-btn "+(MORE_TABS.indexOf(tab)>=0?"tab-active":"tab-inactive"),onClick:function(){_showMore[1](!_showMore[0])},style:{display:"flex",alignItems:"center",gap:6,paddingRight:14}},MORE_TABS.indexOf(tab)>=0?tab+" ":"More ",e("span",{style:{fontSize:14,fontWeight:700,lineHeight:1}},"\u25BE")),
         _showMore[0]&&e("div",{style:{position:"absolute",top:"100%",right:0,background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:8,padding:"4px 0",zIndex:50,minWidth:160,boxShadow:"0 4px 12px rgba(0,0,0,.1)"}},
           MORE_TABS.map(function(t){return e("button",{key:t,style:{display:"block",width:"100%",textAlign:"left",padding:"8px 16px",background:tab===t?"var(--accent-bg)":"transparent",color:tab===t?"var(--accent)":"var(--text-secondary)",border:"none",cursor:"pointer",fontSize:12,fontFamily:"inherit",fontWeight:tab===t?600:400},onClick:function(){_tab[1](t);_showMore[1](false)}},t)})))),
 
@@ -1917,12 +2072,13 @@ function ProjectDetail(p){
         e("span",{style:{fontSize:12,color:"var(--text-tertiary)"}},"Stored in Google Drive")),
       e(FileAttachments,{projectId:projectId,entityType:"project",admin:admin})),
     tab==="Stakeholders"&&e(ProjStakeholders,{stakeholders:stakeholders,projectId:projectId,admin:admin,userRole:userRole,reload:load}),
-    tab==="Reports"&&e(ProjReports,{reports:weeklyReps,projectId:projectId,admin:admin,reload:load,proj:proj,tasks:tasks,risks:risks,budgetItems:budgetItems,budgetReals:budgetReals,regItems:regItems,feedback:data.reportFeedback||[],userRole:userRole,userName:userName}),
+    tab==="Reports"&&e(ProjReports,{reports:weeklyReps,projectId:projectId,admin:admin,reload:load,proj:proj,tasks:tasks,risks:risks,budgetItems:budgetItems,budgetReals:budgetReals,regItems:regItems,userRole:userRole,userName:userName}),
     tab==="Kendala"&&e(KendalaManager,{kendala:kendala,tindakLanjut:tindakLanjut,tasks:tasks,admin:admin,projectId:projectId,reload:load,userName:userName}),
     tab==="Log"&&admin&&userRole==="admin"&&e(ProjLog,{projectId:projectId}),
 
     // Modals
     _editProj[0]&&e(ProjectModal,{project:proj,onClose:function(){_editProj[1](false)},onSaved:load,onBack:onBack}),
+    _showDup[0]&&e(DuplicateProjectModal,{source:proj,onClose:function(){_showDup[1](false)},onCreated:function(newId){if(onBack)onBack();setTimeout(function(){window._navToProject&&window._navToProject(newId)},100)}}),
     _editTask[0]&&e(EditTaskModalInline,{task:_editTask[0],users:_users[0],onClose:function(){_editTask[1](null)},onSave:saveTask}),
     _showAddTask[0]&&e(AddTaskModalInline,{show:true,users:_users[0],onClose:function(){_showAddTask[1](false)},onSave:addTask}),
     _editRisk[0]&&e(RiskModalInline,{risk:_editRisk[0],tasks:tasks,onClose:function(){_editRisk[1](null)},onSave:saveRisk}),
@@ -1930,7 +2086,7 @@ function ProjectDetail(p){
     _editSubModal[0]&&e(SubtaskEditModal,{sub:_editSubModal[0],onClose:function(){_editSubModal[1](null)},onSave:saveSubEdit}),
     _showAddMile[0]&&e(MilestoneModal,{projectId:projectId,allTasks:tasks,onClose:function(){_showAddMile[1](false)},reload:load}),
     _editMile[0]&&e(MilestoneModal,{item:_editMile[0],projectId:projectId,allTasks:tasks,onClose:function(){_editMile[1](null)},reload:load}),
-    _addTaskMile[0]&&e(AddTaskUnderMileModal,{milestone:_addTaskMile[0],projectId:projectId,users:_users[0],onClose:function(){_addTaskMile[1](null)},reload:load}),
+    _addTaskMile[0]&&e(AddTaskUnderMileModal,{milestone:_addTaskMile[0],projectId:projectId,users:_users[0],tasks:tasks,onClose:function(){_addTaskMile[1](null)},reload:load}),
     _submitTask[0]&&e(SubmitReviewModal,{task:_submitTask[0],onClose:function(){_submitTask[1](null)},onSubmit:submitForReview}),
     _rejectTask[0]&&e(RejectTaskModal,{task:_rejectTask[0],onClose:function(){_rejectTask[1](null)},onReject:rejectTask})
   );
@@ -1967,8 +2123,16 @@ function RejectTaskModal(p){
 
 // ── Inline Edit Modals (simplified) ──
 function EditTaskModalInline(p){var t=p.task;var users=p.users||[];
-  var _n=useState(t.name),_sd=useState(t.startDate||""),_ed=useState(t.endDate||""),_st=useState(t.taskStatus||"Not Started"),_assignee=useState(t.assignee||""),_dept=useState(t.department||"");
+  // Multi-assignee: state holds array of names; serialize to comma-separated on save
+  var _n=useState(t.name),_sd=useState(t.startDate||""),_ed=useState(t.endDate||""),_st=useState(t.taskStatus||"Not Started"),_assignees=useState(parseAssignees(t.assignee||""));
+  var _showPicker=useState(false);
   var mileName=t.milestone?t.milestone.name:"";
+  function toggleAssignee(name){
+    var cur=_assignees[0].slice();
+    var i=cur.indexOf(name);
+    if(i>=0)cur.splice(i,1);else cur.push(name);
+    _assignees[1](cur);
+  }
   return e(Modal,{show:true,onClose:p.onClose},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},"\u270F\uFE0F Edit Task"),
     mileName&&e("div",{style:{background:"rgba(72,127,255,.08)",padding:"8px 14px",borderRadius:8,marginBottom:12,fontSize:12}},
@@ -1977,13 +2141,31 @@ function EditTaskModalInline(p){var t=p.task;var users=p.users||[];
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"Start Date"),e("input",{type:"date",className:"input",value:_sd[0],onChange:function(ev){_sd[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"End Date"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}})),
-      e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},e("option",{value:"Not Started"},"Not Started"),e("option",{value:"In Progress"},"In Progress"),e("option",{value:"Pending Review"},"Pending Review"),e("option",{value:"Done"},"Done")))),
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}},
-      e("div",null,e("label",{className:"label"},"Assigned To"),e("select",{className:"select",value:_assignee[0],onChange:function(ev){var v=ev.target.value;_assignee[1](v);var u2=users.find(function(u){return u.name===v});if(u2&&u2.position)_dept[1](u2.position)}},e("option",{value:""},"-- None --"),users.map(function(u){return e("option",{key:u.id,value:u.name},u.name)}))),
-      e("div",null,e("label",{className:"label"},"Role / Position"),e("input",{className:"input",value:_dept[0],onChange:function(ev){_dept[1](ev.target.value)},placeholder:"Auto-filled from user profile"}))),
+      e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},e("option",{value:"Not Started"},"Not Started"),e("option",{value:"In Progress"},"In Progress"),e("option",{value:"Done"},"Done")))),
+    // Multi-assignee picker
+    e("div",{style:{marginBottom:12}},
+      e("label",{className:"label"},"Assignees ("+_assignees[0].length+")"),
+      // Selected chips
+      _assignees[0].length>0&&e("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}},
+        _assignees[0].map(function(an){return e("span",{key:an,style:{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,padding:"3px 8px",borderRadius:50,background:"rgba(72,127,255,.1)",color:"#487FFF",fontWeight:600}},
+          "\uD83D\uDC64 "+an,
+          e("button",{onClick:function(ev){ev.preventDefault();toggleAssignee(an)},style:{border:"none",background:"transparent",color:"#487FFF",cursor:"pointer",fontSize:13,padding:0,marginLeft:2,lineHeight:1}},"\u00D7"))})),
+      // Picker toggle
+      e("button",{type:"button",onClick:function(){_showPicker[1](!_showPicker[0])},className:"btn btn-ghost btn-sm",style:{fontSize:11,width:"100%",justifyContent:"flex-start"}},(_showPicker[0]?"\u25BC":"\u25B6")+" "+(_assignees[0].length===0?"Click to assign people":"Add or remove people")),
+      // Picker checkbox list
+      _showPicker[0]&&e("div",{style:{maxHeight:180,overflowY:"auto",border:"1px solid var(--border)",borderRadius:8,padding:"6px 10px",marginTop:6,background:"var(--bg-surface)"}},
+        users.length===0?e("div",{style:{fontSize:11,color:"var(--text-tertiary)",padding:8}},"No users available"):
+        users.map(function(u){
+          var checked=_assignees[0].indexOf(u.name)>=0;
+          return e("label",{key:u.id,style:{display:"flex",alignItems:"center",gap:8,padding:"5px 0",cursor:"pointer",fontSize:12,borderBottom:"1px solid var(--border-light)"}},
+            e("input",{type:"checkbox",checked:checked,onChange:function(){toggleAssignee(u.name)},style:{accentColor:"#487FFF"}}),
+            e("div",{style:{flex:1}},
+              e("span",{style:{fontWeight:checked?600:400}},u.name),
+              u.position&&e("span",{style:{fontSize:10,color:"var(--text-tertiary)",marginLeft:6}},"\u00B7 "+u.position)))
+        }))),
     e("div",{style:{display:"flex",gap:10}},
       e("button",{className:"btn btn-ghost",onClick:p.onClose,style:{flex:1}},"Cancel"),
-      e("button",{className:"btn btn-primary",style:{flex:1},onClick:function(){p.onSave({name:_n[0],milestone:t.milestone,weight:t.weight||20,startDate:_sd[0],endDate:_ed[0],taskStatus:_st[0],startMonth:_sd[0]?new Date(_sd[0]+"T00:00:00").getMonth():0,assignee:_assignee[0],department:_dept[0]})}},"Save")))}function AddTaskModalInline(p){
+      e("button",{className:"btn btn-primary",style:{flex:1},onClick:function(){p.onSave({name:_n[0],milestone:t.milestone,weight:t.weight||20,startDate:_sd[0],endDate:_ed[0],taskStatus:_st[0],startMonth:_sd[0]?new Date(_sd[0]+"T00:00:00").getMonth():0,assignee:_assignees[0].join(", ")})}},"Save")))}function AddTaskModalInline(p){
   var _n=useState(""),_mn=useState(""),_md=useState("2026-06-30"),_w=useState("20"),_sd=useState(new Date().toISOString().slice(0,10)),_ed=useState("2026-12-31"),_st=useState("Not Started"),_sm=useState(String(getCM()));
   return e(Modal,{show:p.show,onClose:p.onClose},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},"\u2795 Add Task"),
@@ -1991,7 +2173,7 @@ function EditTaskModalInline(p){var t=p.task;var users=p.users||[];
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"Start Date"),e("input",{type:"date",className:"input",value:_sd[0],onChange:function(ev){_sd[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"End Date"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}})),
-      e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},e("option",{value:"Not Started"},"Not Started"),e("option",{value:"In Progress"},"In Progress"),e("option",{value:"Pending Review"},"Pending Review"),e("option",{value:"Done"},"Done")))),
+      e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},e("option",{value:"Not Started"},"Not Started"),e("option",{value:"In Progress"},"In Progress"),e("option",{value:"Done"},"Done")))),
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"Milestone Name"),e("input",{className:"input",value:_mn[0],onChange:function(ev){_mn[1](ev.target.value)},placeholder:"Leave blank to use task name"})),
       e("div",null,e("label",{className:"label"},"Milestone Date"),e("input",{type:"date",className:"input",value:_md[0],onChange:function(ev){_md[1](ev.target.value)}}))),
@@ -2311,7 +2493,28 @@ function ProjOverview(p){var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics
 function ProjTasksMilestones(p){
   var tasks=p.tasks||[],admin=p.admin;
   var _expanded=useState({});
+  var _expPhase=useState({}); // Session 2H: phase expand/collapse, default expanded (track collapsed by name)
   var _dragTask=useState(null),_dragOverTask=useState(null),_dragMile=useState(null),_dragOverMile=useState(null);
+  // Subtask UI state (Session 2G)
+  var _expTask=useState({}); // map of taskId → boolean (subtask area expanded)
+  var _newSub=useState({}); // map of taskId → string (new subtask name input)
+  function togglePhase(name){var o=Object.assign({},_expPhase[0]);o[name]=!o[name];_expPhase[1](o)}
+  function toggleTaskExp(tid){var o=Object.assign({},_expTask[0]);o[tid]=!o[tid];_expTask[1](o)}
+  function setNewSubName(tid,val){var o=Object.assign({},_newSub[0]);o[tid]=val;_newSub[1](o)}
+  function addSubtask(tid){
+    var nm=(_newSub[0][tid]||"").trim();
+    if(!nm)return;
+    apiPost("addSubtask",{taskId:tid,projectId:p.projectId,name:nm,status:"Not Started"}).then(function(d){
+      if(d&&d.ok){setNewSubName(tid,"");p.reload()}
+    })
+  }
+  function updateSubtaskStatus(sid,newStatus){
+    apiPost("updateSubtask",{status:newStatus},sid).then(function(d){if(d&&d.ok)p.reload()})
+  }
+  function deleteSubtask(sid){
+    if(!confirm("Delete this subtask?"))return;
+    apiPost("deleteSubtask",{},sid).then(function(d){if(d&&d.ok)p.reload()})
+  }
   function toggleMile(name){var o=Object.assign({},_expanded[0]);o[name]=!o[name];_expanded[1](o)}
 
   // Drag task within milestone
@@ -2349,9 +2552,62 @@ function ProjTasksMilestones(p){
     // Track earliest start
     if(t.startDate&&(!mMap[mName].startDate||t.startDate<mMap[mName].startDate))mMap[mName].startDate=t.startDate;
   });
-  milestones.sort(function(a,b){return(a.startDate||a.date||"z")>(b.startDate||b.date||"z")?1:-1});
-  // Sort tasks within each milestone by startDate
-  milestones.forEach(function(m){m.tasks.sort(function(a,b){return(a.startDate||"z")>(b.startDate||"z")?1:-1})});
+  // Sort milestones by target date ascending; tiebreaker = smallest task id within the milestone
+  // (matches the Project Overview sort and the Gantt sort, so all three views agree)
+  milestones.sort(function(a,b){
+    var aD=a.date||"9999",bD=b.date||"9999";
+    if(aD!==bD)return aD<bD?-1:1;
+    // Tiebreaker: smallest task id in each milestone (stable, approximates creation order)
+    var aMinId=(a.tasks||[]).reduce(function(acc,t){return!acc||(t.id||"")<acc?(t.id||""):acc},"");
+    var bMinId=(b.tasks||[]).reduce(function(acc,t){return!acc||(t.id||"")<acc?(t.id||""):acc},"");
+    return aMinId<bMinId?-1:1;
+  });
+  // Sort tasks within each milestone:
+  //   1. Primary: start date ascending (dated tasks rise to top, undated fall to bottom via "z" sentinel)
+  //   2. Tiebreaker: id ascending — ids embed creation timestamps so this approximates insertion order
+  // This gives the user: dated tasks first (earliest start first), then undated tasks in creation order
+  milestones.forEach(function(m){m.tasks.sort(function(a,b){
+    var aD=a.startDate||"z",bD=b.startDate||"z";
+    if(aD!==bD)return aD<bD?-1:1;
+    return(a.id||"")<(b.id||"")?-1:1;
+  })});
+
+  // ── Phase grouping (Session 2H) ──
+  // Each milestone inherits phaseName from its first task. Phases are sorted by earliest milestone date.
+  // Phase index (0-based) is used in numbering: <phaseIdx>.<mileIdx>.<taskIdx>
+  // Milestones with no phaseName fall into a special "(No Phase)" bucket that always renders FIRST as ungrouped.
+  milestones.forEach(function(m){
+    var firstTaskWithPhase=(m.tasks||[]).filter(function(t){return t.phaseName&&t.phaseName.trim()})[0];
+    m.phaseName=firstTaskWithPhase?firstTaskWithPhase.phaseName:"";
+  });
+  // Build phase buckets: { phaseName: { name, milestones: [], earliestDate } }
+  var phaseMap={},phasesList=[];
+  milestones.forEach(function(m){
+    var pn=m.phaseName||"";
+    if(!phaseMap[pn]){phaseMap[pn]={name:pn,milestones:[],earliestDate:m.date||"9999"};phasesList.push(phaseMap[pn])}
+    phaseMap[pn].milestones.push(m);
+    if(m.date&&m.date<phaseMap[pn].earliestDate)phaseMap[pn].earliestDate=m.date;
+  });
+  // Sort phases: ungrouped ("") first, then by earliest milestone date ascending
+  phasesList.sort(function(a,b){
+    if(a.name===""&&b.name!=="")return -1;
+    if(a.name!==""&&b.name==="")return 1;
+    if(a.earliestDate!==b.earliestDate)return a.earliestDate<b.earliestDate?-1:1;
+    return a.name<b.name?-1:1;
+  });
+  // Assign phase index to each phased milestone (used in numbering)
+  // Ungrouped milestones get phaseIdx=null so the renderer knows to omit it from numbering
+  var phaseIdxCounter=0;
+  phasesList.forEach(function(ph){
+    if(ph.name===""){
+      ph.phaseIdx=null;
+    }else{
+      ph.phaseIdx=phaseIdxCounter++;
+    }
+    ph.milestones.forEach(function(m){m.phaseIdx=ph.phaseIdx});
+  });
+  // Detect whether ANY phase exists in this project (used to suppress phase headers when nothing is grouped)
+  var hasAnyPhase=phasesList.some(function(ph){return ph.name!==""});
 
   // Milestone completion = done tasks / total tasks
   function milePct(m){
@@ -2377,12 +2633,29 @@ function ProjTasksMilestones(p){
       e("div",{style:{fontSize:40,marginBottom:12}},"\uD83D\uDCC2"),
       e("div",{style:{fontSize:14,color:"var(--text-tertiary)"}},"No milestones yet. Create a milestone first, then add tasks.")):
 
-    milestones.map(function(m,mi){
+    phasesList.map(function(ph,phi){
+      var phaseCollapsed=!!_expPhase[0][ph.name||"__nophase__"];
+      var showPhaseHeader=hasAnyPhase&&ph.name!==""; // hide header for ungrouped bucket and when no phases exist anywhere
+      return e("div",{key:ph.name||"__nophase__"},
+        showPhaseHeader&&e("div",{
+          onClick:function(){togglePhase(ph.name)},
+          style:{
+            display:"flex",alignItems:"center",gap:10,
+            padding:"10px 16px",marginTop:phi>0?16:0,marginBottom:8,
+            background:"linear-gradient(90deg, rgba(72,127,255,.08), rgba(72,127,255,.02))",
+            borderLeft:"4px solid #487FFF",borderRadius:6,cursor:"pointer"
+          }},
+          e("div",{style:{fontSize:12,color:"#487FFF",transition:"transform .2s",transform:phaseCollapsed?"":"rotate(90deg)"}},"\u25B6"),
+          e("div",{style:{fontSize:11,fontWeight:700,color:"#487FFF",letterSpacing:.5}},"PHASE "+(ph.phaseIdx!==null?ph.phaseIdx:"")),
+          e("h3",{style:{fontSize:14,fontWeight:700,color:"var(--text-primary)",margin:0,flex:1}},ph.name),
+          e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},ph.milestones.length+" milestone"+(ph.milestones.length!==1?"s":""))
+        ),
+        !phaseCollapsed&&ph.milestones.map(function(m,mi){
       var mPct=milePct(m);
       var mDone=mPct===100;
       var mDate=m.date?new Date(m.date+"T00:00:00"):null;
       var mOverdue=mDate&&mDate<new Date()&&!mDone;
-      var isOpen=_expanded[0][m.name]!==false; // default open
+      var isOpen=_expanded[0][m.name]===true; // default closed
       var taskWeight=m.tasks.length>0?Math.round(100/m.tasks.length):0;
       // Actual completion date: latest endDate among Done tasks (or today if all done but no endDate)
       var actualDate=null,varianceDays=null,varianceLabel="";
@@ -2397,14 +2670,18 @@ function ProjTasksMilestones(p){
         varianceDays=Math.round((new Date()-mDate)/(864e5));
         varianceLabel=varianceDays+" days overdue";
       }
+      // Numbering helpers (Session 2H): include phase index for phased milestones
+      var hasPhaseIdx=(m.phaseIdx!==null&&m.phaseIdx!==undefined);
+      var mileLabel=hasPhaseIdx?(m.phaseIdx+"."+(mi+1)):(mi+1+"");
+      var taskLabelPrefix=hasPhaseIdx?(m.phaseIdx+"."+(mi+1)+"."):((mi+1)+".");
 
       return e("div",{key:m.name+mi,className:"card",style:{marginBottom:16,overflow:"hidden",borderColor:_dragOverMile[0]===m.name&&_dragMile[0]!==m.name?"#487FFF":"var(--border)",borderWidth:_dragOverMile[0]===m.name&&_dragMile[0]!==m.name?2:1,opacity:_dragMile[0]===m.name?.5:1},draggable:admin?"true":undefined,onDragStart:admin?function(ev){onMileDragStart(ev,m.name)}:undefined,onDragOver:admin?function(ev){onMileDragOver(ev,m.name)}:undefined,onDragEnd:admin?onMileDragEnd:undefined},
         // Milestone header (clickable toggle)
         e("div",{style:{padding:"14px 20px",background:mDone?"rgba(69,179,105,.04)":mOverdue?"rgba(239,74,0,.04)":"#fff",borderBottom:isOpen?"1px solid var(--border)":"none",display:"flex",alignItems:"center",gap:10,cursor:"pointer"},onClick:function(){toggleMile(m.name)}},
           // Toggle arrow
           e("div",{style:{fontSize:14,color:"var(--text-tertiary)",transition:"transform .2s",transform:isOpen?"rotate(90deg)":"",flexShrink:0}},"\u25B6"),
-          // Number badge
-          e("div",{style:{width:30,height:30,borderRadius:8,background:mDone?"#45B369":mOverdue?"#EF4A00":"#487FFF",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,color:"#fff",flexShrink:0}},mi+1),
+          // Number badge (uses mileLabel which includes phase index when applicable)
+          e("div",{style:{minWidth:30,height:30,padding:"0 8px",borderRadius:8,background:mDone?"#45B369":mOverdue?"#EF4A00":"#487FFF",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,color:"#fff",flexShrink:0}},mileLabel),
           // Info
           e("div",{style:{flex:1,minWidth:0}},
             e("div",{style:{display:"flex",alignItems:"center",gap:8}},
@@ -2437,27 +2714,71 @@ function ProjTasksMilestones(p){
           if(t.startDate){elapsed=Math.max(0,Math.ceil((now2-new Date(t.startDate+"T00:00:00"))/864e5))}
           if(t.endDate&&!isDone){remaining=Math.ceil((new Date(t.endDate+"T00:00:00")-now2)/864e5);isDelayed=remaining<0}
           var rejCount=Number(t.rejectionCount)||0;
-          return e("div",{key:t.id,draggable:admin?"true":undefined,onDragStart:admin?function(ev){ev.stopPropagation();onTaskDragStart(ev,t.id)}:undefined,onDragOver:admin?function(ev){ev.stopPropagation();onTaskDragOver(ev,t.id)}:undefined,onDragEnd:admin?onTaskDragEnd:undefined,style:{display:"flex",alignItems:"center",padding:"10px 20px",borderBottom:"1px solid var(--border-light)",background:isDone?"rgba(69,179,105,.02)":isPR?"rgba(139,92,246,.03)":_dragOverTask[0]===t.id&&_dragTask[0]!==t.id?"rgba(72,127,255,.06)":"#fff",opacity:_dragTask[0]===t.id?.4:1,cursor:admin?"grab":"default"}},
+          // Subtask state for this task
+          var subs=t.subtasks||[];
+          var hasSubs=subs.length>0;
+          var subsDone=subs.filter(function(s){return(s.status||(s.done?"Done":"Not Started"))==="Done"}).length;
+          var subPct=hasSubs?Math.round(subsDone/subs.length*100):0;
+          var taskExp=!!_expTask[0][t.id];
+          // When subtasks exist, the manual Submit button is hidden — auto-rollup handles submission
+          var showManualSubmit=isIP&&!hasSubs&&(admin||((p.userRole==="bod"||p.userRole==="collaborator")&&hasAssignee(t.assignee,p.userName)));
+          return e("div",{key:t.id},
+            e("div",{draggable:admin?"true":undefined,onDragStart:admin?function(ev){ev.stopPropagation();onTaskDragStart(ev,t.id)}:undefined,onDragOver:admin?function(ev){ev.stopPropagation();onTaskDragOver(ev,t.id)}:undefined,onDragEnd:admin?onTaskDragEnd:undefined,style:{display:"flex",alignItems:"center",padding:"10px 20px",borderBottom:taskExp?"none":"1px solid var(--border-light)",background:isDone?"rgba(69,179,105,.02)":isPR?"rgba(139,92,246,.03)":_dragOverTask[0]===t.id&&_dragTask[0]!==t.id?"rgba(72,127,255,.06)":"#fff",opacity:_dragTask[0]===t.id?.4:1,cursor:admin?"grab":"default"}},
             admin&&e("span",{style:{fontSize:10,color:"var(--text-hint)",marginRight:6,cursor:"grab"}},"\u2630"),
-            e("span",{style:{fontSize:11,fontWeight:700,color:"var(--text-tertiary)",width:40,flexShrink:0}},(mi+1)+"."+(ti+1)),
+            // Expand chevron — toggles subtask area
+            e("button",{onClick:function(ev){ev.stopPropagation();toggleTaskExp(t.id)},title:hasSubs?(taskExp?"Hide subtasks":"Show subtasks ("+subsDone+"/"+subs.length+" done)"):"Add subtasks",style:{border:"none",background:"transparent",cursor:"pointer",padding:0,marginRight:4,fontSize:11,color:hasSubs?"#487FFF":"var(--text-hint)",width:16,flexShrink:0,transition:"transform .15s",transform:taskExp?"rotate(90deg)":""}},"\u25B6"),
+            e("span",{style:{fontSize:11,fontWeight:700,color:"var(--text-tertiary)",minWidth:40,flexShrink:0}},taskLabelPrefix+(ti+1)),
             e("div",{style:{width:24,height:24,borderRadius:6,background:isDone?"rgba(69,179,105,.15)":isPR?"rgba(139,92,246,.15)":isIP?"rgba(255,159,41,.1)":"var(--border-light)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0,marginRight:10}},isDone?"\u2705":isPR?"\u23F3":isIP?"\uD83D\uDD04":"\uD83D\uDCCB"),
             e("div",{style:{flex:1,minWidth:0}},
               e("div",{style:{fontSize:13,fontWeight:600,textDecoration:isDone?"line-through":"none",color:isDone?"#6B7280":"#1F2937"}},t.name),
               e("div",{style:{display:"flex",gap:6,marginTop:2,flexWrap:"wrap",fontSize:10,color:"var(--text-tertiary)",alignItems:"center"}},
                 e(Badge,{bg:isDone?"rgba(69,179,105,.15)":isPR?"rgba(139,92,246,.15)":isIP?"rgba(255,159,41,.1)":"var(--border-light)",color:isDone?"#45B369":isPR?"#8B5CF6":isIP?"#FF9F29":"#9CA3AF"},t.taskStatus||"Not Started"),
+                // Subtask progress badge — only when subtasks exist
+                hasSubs&&e("span",{style:{fontWeight:700,padding:"1px 6px",borderRadius:4,background:"rgba(72,127,255,.08)",color:"#487FFF"},title:"Auto-managed via subtasks"},subsDone+"/"+subs.length+" \u00B7 "+subPct+"%"),
                 t.startDate&&e("span",null,fmtF(t.startDate)+" \u2192 "+fmtF(t.endDate)),
                 e("span",{style:{fontWeight:600}},taskWeight+"% weight"),
-                t.assignee&&e("span",{style:{fontWeight:600,color:"#487FFF",background:"rgba(72,127,255,.08)",padding:"1px 6px",borderRadius:4}},"\uD83D\uDC64 "+t.assignee),
+                t.assignee&&e("span",{style:{fontWeight:600,color:"#487FFF",background:"rgba(72,127,255,.08)",padding:"1px 6px",borderRadius:4},title:formatAssignees(t.assignee)},"\uD83D\uDC64 "+formatAssignees(t.assignee)),
                 !isDone&&t.startDate&&e("span",{style:{fontWeight:600,color:"var(--text-secondary)"}},elapsed+"d elapsed"),
                 !isDone&&t.endDate&&e("span",{style:{fontWeight:700,padding:"1px 6px",borderRadius:4,background:isDelayed?"rgba(239,74,0,.1)":remaining<=7?"rgba(255,159,41,.1)":"rgba(69,179,105,.08)",color:isDelayed?"#EF4A00":remaining<=7?"#D97706":"#45B369"}},isDelayed?Math.abs(remaining)+"d overdue":remaining+"d left"),
                 rejCount>0&&e("span",{style:{fontWeight:700,padding:"1px 6px",borderRadius:4,background:"rgba(239,74,0,.1)",color:"#EF4A00"}},"\u21A9 "+rejCount+"x returned"),
                 isDone&&t.approvedBy&&e("span",{style:{color:"#45B369"}},"\u2713 "+t.approvedBy))),
             e("div",{style:{display:"flex",gap:4,flexShrink:0,alignItems:"center"}},
-              isIP&&(admin||(p.userRole==="bod"&&(t.assignee||"").toLowerCase()===(p.userName||"").toLowerCase()))&&e("button",{className:"btn",style:{fontSize:9,padding:"3px 8px",background:"rgba(139,92,246,.1)",color:"#8B5CF6"},onClick:function(ev){ev.stopPropagation();p.setSubmitTask(t)}},"\u2713 Submit"),
+              showManualSubmit&&e("button",{className:"btn",style:{fontSize:9,padding:"3px 8px",background:"rgba(139,92,246,.1)",color:"#8B5CF6"},onClick:function(ev){ev.stopPropagation();p.setSubmitTask(t)}},"\u2713 Submit"),
               isPR&&p.canApproveTask(t)&&e("button",{className:"btn",style:{fontSize:9,padding:"3px 8px",background:"rgba(69,179,105,.15)",color:"#45B369"},onClick:function(ev){ev.stopPropagation();p.approveTask(t.id)}},"\u2705 Approve"),
               isPR&&p.canApproveTask(t)&&e("button",{className:"btn",style:{fontSize:9,padding:"3px 8px",background:"rgba(239,74,0,.1)",color:"#EF4A00"},onClick:function(ev){ev.stopPropagation();p.setRejectTask(t)}},"\u21A9 Reject"),
               admin&&e("button",{className:"edit-icon",style:{width:24,height:24,fontSize:10},onClick:function(){p.setEditTask(t)}},"\u270F"),
-              admin&&e("button",{className:"del-icon",style:{width:24,height:24},onClick:function(){p.delTask(t.id)}},"\u2715"))
+              admin&&e("button",{className:"del-icon",style:{width:24,height:24},onClick:function(){p.delTask(t.id)}},"\u2715"))),
+            // Subtask area — visible when expanded
+            taskExp&&e("div",{style:{padding:"10px 20px 12px 76px",background:"#FAFBFC",borderBottom:"1px solid var(--border-light)"}},
+              subs.length===0&&!admin&&e("div",{style:{fontSize:11,color:"var(--text-tertiary)",fontStyle:"italic"}},"No subtasks"),
+              subs.length===0&&admin&&e("div",{style:{fontSize:11,color:"var(--text-tertiary)",marginBottom:8}},"No subtasks yet. Add one below \u2014 once added, this task will be controlled by subtask completion."),
+              subs.map(function(s,si){
+                var sStatus=s.status||(s.done?"Done":"Not Started");
+                var sIsDone=sStatus==="Done";
+                var sIsIP=sStatus==="In Progress";
+                var canEditSub=admin||((p.userRole==="bod"||p.userRole==="collaborator")&&hasAssignee(t.assignee,p.userName));
+                return e("div",{key:s.id,style:{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:si<subs.length-1?"1px solid var(--border-light)":"none"}},
+                  e("span",{style:{fontSize:14,color:"var(--text-tertiary)",fontWeight:700,width:16,textAlign:"center",flexShrink:0}},"\u2022"),
+                  e("div",{style:{width:18,height:18,borderRadius:4,background:sIsDone?"rgba(69,179,105,.15)":sIsIP?"rgba(255,159,41,.15)":"var(--border-light)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,flexShrink:0}},sIsDone?"\u2705":sIsIP?"\uD83D\uDD04":"\uD83D\uDCCB"),
+                  e("div",{style:{flex:1,fontSize:12,fontWeight:500,textDecoration:sIsDone?"line-through":"none",color:sIsDone?"#6B7280":"#1F2937",minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}},s.name),
+                  canEditSub?e("select",{
+                    value:sStatus,
+                    onChange:function(ev){updateSubtaskStatus(s.id,ev.target.value)},
+                    style:{fontSize:10,padding:"3px 6px",border:"1px solid var(--border)",borderRadius:6,background:sIsDone?"rgba(69,179,105,.08)":sIsIP?"rgba(255,159,41,.08)":"#fff",color:sIsDone?"#45B369":sIsIP?"#FF9F29":"#6B7280",fontWeight:600,cursor:"pointer",flexShrink:0}
+                  },
+                    e("option",{value:"Not Started"},"Not Started"),
+                    e("option",{value:"In Progress"},"In Progress"),
+                    e("option",{value:"Done"},"Done")
+                  ):e("span",{style:{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:4,background:sIsDone?"rgba(69,179,105,.1)":sIsIP?"rgba(255,159,41,.1)":"var(--border-light)",color:sIsDone?"#45B369":sIsIP?"#FF9F29":"#6B7280",flexShrink:0}},sStatus),
+                  admin&&e("button",{className:"del-icon",style:{width:20,height:20,fontSize:9},onClick:function(){deleteSubtask(s.id)},title:"Delete subtask"},"\u2715")
+                )
+              }),
+              // Add subtask form (admin only)
+              admin&&e("div",{style:{display:"flex",gap:8,marginTop:subs.length>0?10:4}},
+                e("input",{type:"text",className:"input",placeholder:"Add subtask\u2026",value:_newSub[0][t.id]||"",onChange:function(ev){setNewSubName(t.id,ev.target.value)},onKeyDown:function(ev){if(ev.key==="Enter")addSubtask(t.id)},style:{flex:1,fontSize:12,padding:"6px 10px"}}),
+                e("button",{className:"btn btn-primary",style:{fontSize:11,padding:"6px 12px"},onClick:function(){addSubtask(t.id)},disabled:!(_newSub[0][t.id]||"").trim()},"\u2795 Add")
+              )
+            )
           );
         }),
 
@@ -2465,6 +2786,8 @@ function ProjTasksMilestones(p){
         isOpen&&admin&&e("div",{style:{padding:"10px 20px",borderTop:"1px solid var(--border)",background:"#FAFBFC"}},
           e("button",{className:"btn btn-ghost btn-sm",style:{width:"100%"},onClick:function(){p.addTaskUnderMilestone(m.name,m.date)}},"\u2795 Add Task"))
       );
+    })
+      ); // close phasesList.map outer div
     })
   );
 }
@@ -2488,7 +2811,7 @@ function ProjTasks(p){var tasks=p.tasks,admin=p.admin;
           admin&&e("div",{style:{padding:"0 8px 0 12px",color:"var(--text-hint)",fontSize:16,cursor:"grab"}},"\u2630"),
           e("button",{className:"expand-btn",style:{flex:1},onClick:function(){p.exp[1](isO?null:t.id)}},
             e("div",{style:{width:40,height:40,borderRadius:10,background:pr===100?"rgba(69,179,105,.15)":pr>0?"rgba(255,159,41,.1)":"var(--border-light)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}},pr===100?"\u2705":pr>0?"\uD83D\uDD04":"\uD83D\uDCCB"),
-            e("div",{style:{flex:1}},e("div",{style:{fontSize:14,fontWeight:600}},t.name),e("div",{style:{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}},e(Badge,{bg:(t.taskStatus||"Not Started")==="Done"?"rgba(69,179,105,.15)":(t.taskStatus||"Not Started")==="In Progress"?"rgba(255,159,41,.1)":"var(--border-light)",color:(t.taskStatus||"Not Started")==="Done"?"#45B369":(t.taskStatus||"Not Started")==="In Progress"?"#FF9F29":"#9CA3AF"},t.taskStatus||"Not Started"),e("span",{style:{fontSize:11,color:"var(--text-secondary)"}},(t.subtasks?t.subtasks.filter(function(s){return s.done}).length:0)+"/"+(t.subtasks?t.subtasks.length:0)+" subtasks"),t.startDate&&e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},fmtF(t.startDate)+" \u2192 "+fmtF(t.endDate)),t.milestone&&e("span",{style:{fontSize:11,color:"var(--text-secondary)"}}," "+fmtF(t.milestone.date)),t.assignee&&e("span",{style:{fontSize:11,fontWeight:600,color:"#487FFF",background:"rgba(72,127,255,.08)",padding:"1px 6px",borderRadius:4}},"\uD83D\uDC64 "+t.assignee))),
+            e("div",{style:{flex:1}},e("div",{style:{fontSize:14,fontWeight:600}},t.name),e("div",{style:{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}},e(Badge,{bg:(t.taskStatus||"Not Started")==="Done"?"rgba(69,179,105,.15)":(t.taskStatus||"Not Started")==="In Progress"?"rgba(255,159,41,.1)":"var(--border-light)",color:(t.taskStatus||"Not Started")==="Done"?"#45B369":(t.taskStatus||"Not Started")==="In Progress"?"#FF9F29":"#9CA3AF"},t.taskStatus||"Not Started"),e("span",{style:{fontSize:11,color:"var(--text-secondary)"}},(t.subtasks?t.subtasks.filter(function(s){return s.done}).length:0)+"/"+(t.subtasks?t.subtasks.length:0)+" subtasks"),t.startDate&&e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},fmtF(t.startDate)+" \u2192 "+fmtF(t.endDate)),t.milestone&&e("span",{style:{fontSize:11,color:"var(--text-secondary)"}}," "+fmtF(t.milestone.date)),t.assignee&&e("span",{style:{fontSize:11,fontWeight:600,color:"#487FFF",background:"rgba(72,127,255,.08)",padding:"1px 6px",borderRadius:4},title:formatAssignees(t.assignee)},"\uD83D\uDC64 "+formatAssignees(t.assignee)))),
             e("div",{style:{fontSize:20,fontWeight:700,fontFamily:mono,color:sc(t.taskStatus||t.status),flexShrink:0,marginRight:8}},pr+"%"),
             e("div",{style:{fontSize:16,color:"var(--text-tertiary)",transition:"transform .2s",transform:isO?"rotate(180deg)":""}},"\u25BE")),
           admin&&e("div",{style:{display:"flex",gap:6,paddingRight:16}},e("button",{className:"edit-icon",onClick:function(ev){ev.stopPropagation();p.setEditTask(t)}},"\u270F"),e("button",{className:"del-icon",onClick:function(ev){ev.stopPropagation();p.delTask(t.id)}},"\u2715"))),
@@ -2529,11 +2852,19 @@ function SubtaskEditModal(p){
 }
 
 function AddTaskUnderMileModal(p){
-  var mile=p.milestone;var users=p.users||[];
-  var _n=useState(""),_sd=useState(new Date().toISOString().slice(0,10)),_ed=useState("2026-12-31"),_st=useState("Not Started"),_assignee=useState(""),_dept=useState(""),_saving=useState(false);
+  var mile=p.milestone;var users=p.users||[];var existingTasks=p.tasks||[];
+  var _n=useState(""),_sd=useState(new Date().toISOString().slice(0,10)),_ed=useState("2026-12-31"),_st=useState("Not Started"),_assignees=useState([]),_saving=useState(false),_showPicker=useState(false);
+  function toggleAssignee(name){
+    var cur=_assignees[0].slice();
+    var i=cur.indexOf(name);
+    if(i>=0)cur.splice(i,1);else cur.push(name);
+    _assignees[1](cur);
+  }
   function save(){
     if(!_n[0].trim())return;_saving[1](true);
-    apiPost("addTask",{projectId:p.projectId,name:_n[0],milestoneName:mile.name,milestoneDate:mile.date,weight:20,startMonth:_sd[0]?new Date(_sd[0]+"T00:00:00").getMonth():0,sortOrder:99,startDate:_sd[0],endDate:_ed[0],taskStatus:_st[0],assignee:_assignee[0],department:_dept[0]}).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})
+    // Compute next sortOrder = total existing tasks (puts new task at the end of its milestone)
+    var nextSortOrder=existingTasks.length;
+    apiPost("addTask",{projectId:p.projectId,name:_n[0],milestoneName:mile.name,milestoneDate:mile.date,weight:20,startMonth:_sd[0]?new Date(_sd[0]+"T00:00:00").getMonth():0,sortOrder:nextSortOrder,startDate:_sd[0],endDate:_ed[0],taskStatus:_st[0],assignee:_assignees[0].join(", ")}).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})
   }
   return e(Modal,{show:true,onClose:p.onClose},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},"\u2795 Add Task"),
@@ -2544,10 +2875,25 @@ function AddTaskUnderMileModal(p){
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"Start Date"),e("input",{type:"date",className:"input",value:_sd[0],onChange:function(ev){_sd[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"End Date"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}})),
-      e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},e("option",{value:"Not Started"},"Not Started"),e("option",{value:"In Progress"},"In Progress"),e("option",{value:"Pending Review"},"Pending Review"),e("option",{value:"Done"},"Done")))),
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
-      e("div",null,e("label",{className:"label"},"Assigned To"),e("select",{className:"select",value:_assignee[0],onChange:function(ev){var v=ev.target.value;_assignee[1](v);var u2=users.find(function(u){return u.name===v});if(u2&&u2.position)_dept[1](u2.position)}},e("option",{value:""},"-- None --"),users.map(function(u){return e("option",{key:u.id,value:u.name},u.name)}))),
-      e("div",null,e("label",{className:"label"},"Role / Position"),e("input",{className:"input",value:_dept[0],onChange:function(ev){_dept[1](ev.target.value)},placeholder:"Auto-filled from user profile"}))),
+      e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_st[0],onChange:function(ev){_st[1](ev.target.value)}},e("option",{value:"Not Started"},"Not Started"),e("option",{value:"In Progress"},"In Progress"),e("option",{value:"Done"},"Done")))),
+    // Multi-assignee picker
+    e("div",{style:{marginBottom:12}},
+      e("label",{className:"label"},"Assignees ("+_assignees[0].length+")"),
+      _assignees[0].length>0&&e("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}},
+        _assignees[0].map(function(an){return e("span",{key:an,style:{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,padding:"3px 8px",borderRadius:50,background:"rgba(72,127,255,.1)",color:"#487FFF",fontWeight:600}},
+          "\uD83D\uDC64 "+an,
+          e("button",{onClick:function(ev){ev.preventDefault();toggleAssignee(an)},style:{border:"none",background:"transparent",color:"#487FFF",cursor:"pointer",fontSize:13,padding:0,marginLeft:2,lineHeight:1}},"\u00D7"))})),
+      e("button",{type:"button",onClick:function(){_showPicker[1](!_showPicker[0])},className:"btn btn-ghost btn-sm",style:{fontSize:11,width:"100%",justifyContent:"flex-start"}},(_showPicker[0]?"\u25BC":"\u25B6")+" "+(_assignees[0].length===0?"Click to assign people":"Add or remove people")),
+      _showPicker[0]&&e("div",{style:{maxHeight:180,overflowY:"auto",border:"1px solid var(--border)",borderRadius:8,padding:"6px 10px",marginTop:6,background:"var(--bg-surface)"}},
+        users.length===0?e("div",{style:{fontSize:11,color:"var(--text-tertiary)",padding:8}},"No users available"):
+        users.map(function(u){
+          var checked=_assignees[0].indexOf(u.name)>=0;
+          return e("label",{key:u.id,style:{display:"flex",alignItems:"center",gap:8,padding:"5px 0",cursor:"pointer",fontSize:12,borderBottom:"1px solid var(--border-light)"}},
+            e("input",{type:"checkbox",checked:checked,onChange:function(){toggleAssignee(u.name)},style:{accentColor:"#487FFF"}}),
+            e("div",{style:{flex:1}},
+              e("span",{style:{fontWeight:checked?600:400}},u.name),
+              u.position&&e("span",{style:{fontSize:10,color:"var(--text-tertiary)",marginLeft:6}},"\u00B7 "+u.position)))
+        }))),
     e("div",{style:{background:"var(--bg-surface)",padding:"8px 14px",borderRadius:8,marginBottom:16,fontSize:11,color:"var(--text-secondary)"}},
       "\uD83D\uDCA1 Weight is auto-calculated: each task gets equal share (e.g. 4 tasks = 25% each). Milestone completes when all tasks are Done."),
     e("div",{style:{display:"flex",gap:10}},
@@ -2557,26 +2903,52 @@ function AddTaskUnderMileModal(p){
 
 function MilestoneModal(p){
   var item=p.item;var isEdit=!!item;
-  var _name=useState(isEdit?(item.milestone?item.milestone.name:item.name):""),_sd=useState(isEdit?(item.startDate||""):""),_ed=useState(isEdit?(item.milestone?item.milestone.date:""):new Date(Date.now()+30*864e5).toISOString().slice(0,10)),_dep=useState(isEdit?(item.dependsOn||""):""),_saving=useState(false);
+  // For edit mode: read phaseName from any task in the milestone
+  var initialPhase="";
+  if(isEdit){
+    var mn0=item.milestone?item.milestone.name:item.name;
+    var sample=(p.allTasks||[]).filter(function(t){return(t.milestone?t.milestone.name:t.name)===mn0})[0];
+    if(sample)initialPhase=sample.phaseName||"";
+  }
+  var _name=useState(isEdit?(item.milestone?item.milestone.name:item.name):""),_sd=useState(isEdit?(item.startDate||""):""),_ed=useState(isEdit?(item.milestone?item.milestone.date:""):new Date(Date.now()+30*864e5).toISOString().slice(0,10)),_dep=useState(isEdit?(item.dependsOn||""):""),_phase=useState(initialPhase),_saving=useState(false);
   // Build milestone names from passed tasks
   var milestoneNames=[];var mSet={};
   (p.allTasks||[]).forEach(function(t){var mn=t.milestone?t.milestone.name:t.name;if(!mSet[mn]){mSet[mn]=true;milestoneNames.push(mn)}});
   var currentName=_name[0];
   var otherMilestones=milestoneNames.filter(function(mn){return mn!==currentName});
+  // Build list of existing phases in this project for autocomplete
+  var existingPhases=[];var pSet={};
+  (p.allTasks||[]).forEach(function(t){if(t.phaseName&&!pSet[t.phaseName]){pSet[t.phaseName]=true;existingPhases.push(t.phaseName)}});
+  existingPhases.sort();
 
   function save(){
     if(!_name[0].trim())return;
     _saving[1](true);
     if(isEdit){
-      apiPost("updateTask",{name:_name[0],milestoneName:_name[0],milestoneDate:_ed[0],startDate:_sd[0],endDate:_ed[0],dependsOn:_dep[0]},item.id).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})
+      var oldName=item.milestone?item.milestone.name:item.name;
+      // Bulk update: applies to ALL tasks in this milestone (also fixes legacy milestone-rename bug)
+      apiPost("updateMilestone",{
+        projectId:p.projectId,
+        oldMilestoneName:oldName,
+        newMilestoneName:_name[0],
+        milestoneDate:_ed[0],
+        phaseName:_phase[0]||"",
+        dependsOn:_dep[0]||""
+      }).then(function(d){if(d&&d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})
     }else{
-      apiPost("addTask",{projectId:p.projectId,name:_name[0],milestoneName:_name[0],milestoneDate:_ed[0],weight:0,startMonth:new Date(_ed[0]+"T00:00:00").getMonth(),sortOrder:99,startDate:_sd[0],endDate:_ed[0],taskStatus:"Not Started",dependsOn:_dep[0]}).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})
+      apiPost("addTask",{projectId:p.projectId,name:_name[0],milestoneName:_name[0],milestoneDate:_ed[0],weight:0,startMonth:new Date(_ed[0]+"T00:00:00").getMonth(),sortOrder:99,startDate:_sd[0],endDate:_ed[0],taskStatus:"Not Started",dependsOn:_dep[0],phaseName:_phase[0]||""}).then(function(d){if(d.ok){p.reload();p.onClose()}}).finally(function(){_saving[1](false)})
     }
   }
   return e(Modal,{show:true,onClose:p.onClose},
     e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16}},isEdit?"\u270F\uFE0F Edit Milestone":" Add Milestone"),
     e("label",{className:"label"},"Milestone Name *"),
-    e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value)},placeholder:"e.g. Phase 1 Complete, Go-Live",style:{marginBottom:12}}),
+    e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value)},placeholder:"e.g. Project Planning Baseline, Go-Live",style:{marginBottom:12}}),
+    // Phase field with datalist autocomplete
+    e("label",{className:"label"},"Phase (optional)"),
+    e("input",{className:"input",list:"phase-suggestions-"+(p.projectId||"x"),value:_phase[0],onChange:function(ev){_phase[1](ev.target.value)},placeholder:"e.g. Phase 0, Phase 1 \u2014 leave blank for ungrouped",style:{marginBottom:4}}),
+    e("datalist",{id:"phase-suggestions-"+(p.projectId||"x")},
+      existingPhases.map(function(ph){return e("option",{key:ph,value:ph})})),
+    e("div",{style:{fontSize:10,color:"var(--text-tertiary)",marginBottom:12}},"Type a new phase to create one, or pick from existing. Milestones with the same phase will be grouped together."),
     e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
       e("div",null,e("label",{className:"label"},"Start Date"),e("input",{type:"date",className:"input",value:_sd[0],onChange:function(ev){_sd[1](ev.target.value)}})),
       e("div",null,e("label",{className:"label"},"Target Date *"),e("input",{type:"date",className:"input",value:_ed[0],onChange:function(ev){_ed[1](ev.target.value)}}))),
@@ -2683,8 +3055,38 @@ function ProjSCurve(p){var tasks=p.tasks,met=p.metrics,proj=p.proj||{};var _h=us
   var variance2=Math.round((actNow-planNow)*10)/10;
   var ap2=[];actual.forEach(function(v,i){if(v!==null)ap2.push({i:i,v:v})});
   var aP=ap2.map(function(p2,i){return(i?"L":"M")+x(p2.i).toFixed(1)+","+y(p2.v).toFixed(1)}).join(" ");
+  // Count tasks by status for contextual narrative
+  var doneCnt=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
+  var ipCnt=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="in progress"}).length;
+  var nsCnt=tasks.filter(function(t){var s=(t.taskStatus||"").toLowerCase();return s!=="done"&&s!=="in progress"}).length;
+  // Build contextual summary message based on variance and task mix
+  var narrative,narrativeColor,narrativeBg,narrativeIcon;
+  if(variance2>=10){
+    narrative="Project is significantly ahead of schedule. Completed work substantially exceeds the baseline plan. Maintain current pace and verify quality.";
+    narrativeColor="#15803D";narrativeBg="rgba(34,197,94,.1)";narrativeIcon="\uD83D\uDE80"; // rocket
+  }else if(variance2>=3){
+    narrative="Project is ahead of schedule. Completed deliverables exceed the baseline plan. Continue current pace.";
+    narrativeColor="#15803D";narrativeBg="rgba(34,197,94,.08)";narrativeIcon="\u2705"; // check
+  }else if(variance2>=-3){
+    narrative="Project is on track. Actual completion aligns with the baseline plan within an acceptable margin.";
+    narrativeColor="#1D4ED8";narrativeBg="rgba(59,130,246,.08)";narrativeIcon="\uD83D\uDFE2"; // green circle
+  }else if(variance2>=-10){
+    narrative="Project is slightly behind plan. "+(ipCnt>0?ipCnt+" task"+(ipCnt!==1?"s are":" is")+" currently in progress but ha"+(ipCnt!==1?"ve":"s")+" not yet completed enough to close the gap. ":"")+"Watch closely over the next reporting cycle.";
+    narrativeColor="#B45309";narrativeBg="rgba(255,159,41,.1)";narrativeIcon="\u26A0\uFE0F"; // warning
+  }else{
+    narrative="Project is behind schedule. Completed work is significantly below the baseline plan. "+(ipCnt>0?ipCnt+" in-progress task"+(ipCnt!==1?"s":"")+" need"+(ipCnt!==1?"":"s")+" to complete soon to recover. ":"")+"Consider escalation or schedule adjustment.";
+    narrativeColor="#B91C1C";narrativeBg="rgba(239,74,0,.1)";narrativeIcon="\uD83D\uDD34"; // red circle
+  }
   function mm(ev){var r=ev.currentTarget.getBoundingClientRect();var idx=Math.round(((ev.clientX-r.left)/r.width*W-pL)/cW*11);_h[1](Math.max(0,Math.min(11,idx)))}
   return e("div",{style:{animation:"fadeIn .3s"}},e("h2",{style:{fontSize:20,fontWeight:700,marginBottom:4}},"S-Curve"),e("p",{style:{fontSize:13,color:"var(--text-secondary)",marginBottom:20}},"Planned vs Actual cumulative progress based on task weights and schedules."),
+    // Contextual narrative — explains what the variance means in plain language
+    e("div",{style:{background:narrativeBg,borderLeft:"4px solid "+narrativeColor,borderRadius:8,padding:"14px 18px",marginBottom:16,display:"flex",gap:12,alignItems:"flex-start"}},
+      e("div",{style:{fontSize:20,flexShrink:0,lineHeight:1}},narrativeIcon),
+      e("div",{style:{flex:1}},
+        e("div",{style:{fontSize:13,fontWeight:700,color:narrativeColor,marginBottom:4}},"Status Summary"),
+        e("div",{style:{fontSize:13,color:"var(--text-primary)",lineHeight:1.55}},narrative),
+        e("div",{style:{fontSize:11,color:"var(--text-tertiary)",marginTop:6}},
+          doneCnt+" done \u00B7 "+ipCnt+" in progress \u00B7 "+nsCnt+" not started"))),
     // Legend + Summary
     e("div",{style:{display:"flex",gap:24,marginBottom:16,flexWrap:"wrap",alignItems:"center"}},
       e("div",{style:{display:"flex",alignItems:"center",gap:8}},e("div",{style:{width:24,height:3,background:"#487FFF",borderRadius:2}}),e("span",{style:{fontSize:12,color:"var(--text-secondary)"}},"Planned")),
@@ -2708,11 +3110,15 @@ function ProjSCurve(p){var tasks=p.tasks,met=p.metrics,proj=p.proj||{};var _h=us
       e("text",{x:x(cm),y:pT-6,textAnchor:"middle",fill:"#9CA3AF",fontSize:9},"Today"),
       // Hover tooltip
       hover!==null&&e("g",null,e("line",{x1:x(hover),y1:pT,x2:x(hover),y2:pT+cH,stroke:"#4B5563",strokeWidth:1,opacity:.3}),e("circle",{cx:x(hover),cy:y(planned[hover]),r:5,fill:"#487FFF",stroke:"#fff",strokeWidth:2}),actual[hover]!==null&&e("circle",{cx:x(hover),cy:y(actual[hover]),r:5,fill:"#FF9F29",stroke:"#fff",strokeWidth:2}))
-    ),hover!==null&&e("div",{style:{display:"flex",justifyContent:"center",marginTop:12,gap:20,fontSize:13}},e("span",{style:{color:"var(--text-secondary)"}},MO[hover]),e("span",{style:{fontWeight:600,color:"#487FFF"}},"Plan: "+planned[hover]+"%"),actual[hover]!==null&&e("span",{style:{fontWeight:600,color:"#FF9F29"}},"Actual: "+actual[hover]+"%")))
+    ),hover!==null&&e("div",{style:{display:"flex",justifyContent:"center",marginTop:12,gap:20,fontSize:13}},e("span",{style:{color:"var(--text-secondary)"}},MO[hover]),e("span",{style:{fontWeight:600,color:"#487FFF"}},"Plan: "+planned[hover]+"%"),actual[hover]!==null&&e("span",{style:{fontWeight:600,color:"#FF9F29"}},"Actual: "+actual[hover]+"%"))),
+    // Methodology footnote — explains the formula so BOD knows what they're looking at
+    e("div",{style:{marginTop:12,padding:"10px 14px",background:"var(--bg-surface)",borderRadius:6,fontSize:11,color:"var(--text-tertiary)",lineHeight:1.5}},
+      e("strong",{style:{color:"var(--text-secondary)"}},"How this is calculated: "),
+      "The Actual line counts only ",e("strong",null,"completed (Done)")," tasks. In-progress tasks are ",e("strong",null,"not credited")," until marked Done. This is intentional \u2014 it ensures progress reflects delivered work, not work in motion. A negative variance with active in-progress tasks usually means the work has started but hasn\u2019t finished yet, which is normal for tasks spanning multiple weeks.")
   );
 }
 
-function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState({});var cm=getCM(),todayPct=(cm+new Date().getDate()/30)/12*100;
+function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState({});var _expPhase=useState({});var cm=getCM(),todayPct=(cm+new Date().getDate()/30)/12*100;
   var mColors=["#1F2937","#487FFF","#45B369","#1CD4C6","#FF9F29","#EF4A00","#8B5CF6"];
   // Group by milestone
   var milestones=[];var mMap={};
@@ -2721,11 +3127,49 @@ function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState
     if(!mMap[mName]){mMap[mName]={name:mName,date:t.milestone?t.milestone.date:"",tasks:[]};milestones.push(mMap[mName])}
     mMap[mName].tasks.push(t);
   });
-  milestones.sort(function(a,b){return(a.tasks[0]&&a.tasks[0].startDate||"z")>(b.tasks[0]&&b.tasks[0].startDate||"z")?1:-1});
-  milestones.forEach(function(m){m.tasks.sort(function(a,b){return(a.startDate||"z")>(b.startDate||"z")?1:-1})});
+  // Sort milestones by target date ascending; tiebreaker = smallest task id (matches Tasks & Milestones view)
+  milestones.sort(function(a,b){
+    var aD=a.date||"9999",bD=b.date||"9999";
+    if(aD!==bD)return aD<bD?-1:1;
+    var aMinId=(a.tasks||[]).reduce(function(acc,t){return!acc||(t.id||"")<acc?(t.id||""):acc},"");
+    var bMinId=(b.tasks||[]).reduce(function(acc,t){return!acc||(t.id||"")<acc?(t.id||""):acc},"");
+    return aMinId<bMinId?-1:1;
+  });
+  // Sort tasks within each milestone — date primary, id tiebreaker (matches Tasks & Milestones view)
+  milestones.forEach(function(m){m.tasks.sort(function(a,b){
+    var aD=a.startDate||"z",bD=b.startDate||"z";
+    if(aD!==bD)return aD<bD?-1:1;
+    return(a.id||"")<(b.id||"")?-1:1;
+  })});
+
+  // ── Phase grouping (Session 2H) — mirrors ProjTasksMilestones ──
+  milestones.forEach(function(m){
+    var firstTaskWithPhase=(m.tasks||[]).filter(function(t){return t.phaseName&&t.phaseName.trim()})[0];
+    m.phaseName=firstTaskWithPhase?firstTaskWithPhase.phaseName:"";
+  });
+  var phaseMap={},phasesList=[];
+  milestones.forEach(function(m){
+    var pn=m.phaseName||"";
+    if(!phaseMap[pn]){phaseMap[pn]={name:pn,milestones:[],earliestDate:m.date||"9999"};phasesList.push(phaseMap[pn])}
+    phaseMap[pn].milestones.push(m);
+    if(m.date&&m.date<phaseMap[pn].earliestDate)phaseMap[pn].earliestDate=m.date;
+  });
+  phasesList.sort(function(a,b){
+    if(a.name===""&&b.name!=="")return -1;
+    if(a.name!==""&&b.name==="")return 1;
+    if(a.earliestDate!==b.earliestDate)return a.earliestDate<b.earliestDate?-1:1;
+    return a.name<b.name?-1:1;
+  });
+  var ganttPhaseIdxCounter=0;
+  phasesList.forEach(function(ph){
+    if(ph.name===""){ph.phaseIdx=null}else{ph.phaseIdx=ganttPhaseIdxCounter++}
+    ph.milestones.forEach(function(m){m.phaseIdx=ph.phaseIdx});
+  });
+  var hasAnyPhase=phasesList.some(function(ph){return ph.name!==""});
 
   function getPos(dateStr,fallback){if(!dateStr)return fallback;var d=new Date(dateStr+"T00:00:00");return isNaN(d)?fallback:d.getMonth()+(d.getDate()-1)/30}
   function toggle(name){var o=Object.assign({},_open[0]);o[name]=!o[name];_open[1](o)}
+  function togglePhaseG(name){var o=Object.assign({},_expPhase[0]);o[name]=!o[name];_expPhase[1](o)}
 
   // Pre-compute milestone positions for dependency arrows
   var mPos={};
@@ -2756,7 +3200,24 @@ function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState
         e("div",{style:{width:280,flexShrink:0,padding:"8px 16px",fontSize:13,fontWeight:700,borderRight:"1px solid var(--border)"}},"Milestone"),
         e("div",{style:{flex:1,display:"flex"}},MO.map(function(m,i){return e("div",{key:i,style:{flex:1,textAlign:"center",padding:"8px 0",fontSize:11,fontWeight:i===cm?700:400,color:i===cm?"#487FFF":"#9CA3AF",background:i===cm?"rgba(72,127,255,.08)":"transparent",borderRight:"1px solid var(--border-light)"}},m)}))),
 
-      milestones.map(function(m,mi){
+      phasesList.map(function(ph,phi){
+        var phaseCollapsed=!!_expPhase[0][ph.name||"__nophase__"];
+        var showPhaseHeader=hasAnyPhase&&ph.name!=="";
+        var phaseHeader=showPhaseHeader?e("div",{
+          key:"phh"+phi,
+          onClick:function(){togglePhaseG(ph.name)},
+          style:{display:"flex",minHeight:38,borderBottom:"1px solid var(--border)",cursor:"pointer",background:"linear-gradient(90deg, rgba(72,127,255,.10), rgba(72,127,255,.02))",borderLeft:"4px solid #487FFF"}},
+          e("div",{style:{width:280,flexShrink:0,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}},
+            e("div",{style:{fontSize:11,color:"#487FFF",transition:"transform .2s",transform:phaseCollapsed?"":"rotate(90deg)"}},"\u25B6"),
+            e("div",{style:{fontSize:9,fontWeight:700,color:"#487FFF",letterSpacing:.5,background:"rgba(72,127,255,.15)",padding:"2px 6px",borderRadius:4}},"PHASE "+(ph.phaseIdx!==null?ph.phaseIdx:"")),
+            e("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-primary)",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},ph.name),
+            e("span",{style:{fontSize:9,color:"var(--text-tertiary)"}},ph.milestones.length+" m")
+          ),
+          e("div",{style:{flex:1}})
+        ):null;
+        var phaseRows=phaseCollapsed?[]:ph.milestones.map(function(m,mi){
+        var hasPhaseIdx=(m.phaseIdx!==null&&m.phaseIdx!==undefined);
+        var mileLabel=hasPhaseIdx?(m.phaseIdx+"."+(mi+1)):(mi+1+"");
         var mColor=mColors[mi%mColors.length];
         var doneTasks=m.tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
         var mPct=m.tasks.length>0?Math.round(doneTasks/m.tasks.length*100):0;
@@ -2777,7 +3238,7 @@ function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState
         rows.push(e("div",{key:"m"+mi,style:{display:"flex",minHeight:depOn?52:44,borderBottom:"1px solid var(--border)",cursor:"pointer",background:"var(--bg-surface)"},onClick:function(){toggle(m.name)}},
           e("div",{style:{width:280,flexShrink:0,padding:"6px 16px",display:"flex",alignItems:"center",gap:6,borderRight:"1px solid var(--border)"}},
             e("div",{style:{fontSize:10,color:"var(--text-tertiary)",transition:"transform .2s",transform:isOpen?"rotate(90deg)":""}},"\u25B6"),
-            e("div",{style:{width:22,height:22,borderRadius:5,background:mColor,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:9,color:"#fff",flexShrink:0}},mi+1),
+            e("div",{style:{minWidth:22,height:22,padding:"0 5px",borderRadius:5,background:mColor,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:9,color:"#fff",flexShrink:0}},mileLabel),
             e("div",{style:{flex:1,minWidth:0}},
               e("div",{style:{fontSize:12,fontWeight:700}},m.name),
               e("div",{style:{fontSize:9,color:"var(--text-tertiary)"}},doneTasks+"/"+m.tasks.length+" \u2022 "+mPct+"%"),
@@ -2812,6 +3273,9 @@ function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState
           ));
         })}
         return e("div",{key:"mg"+mi},rows);
+      });
+        // Phase wrapper: header (if shown) followed by milestone rows
+        return e("div",{key:"ph"+phi},phaseHeader,phaseRows);
       })
     )))
   );
@@ -3846,52 +4310,98 @@ function KendalaManager(p){
 }
 
 function ProjReports(p){
-  var reports=p.reports,admin=p.admin,projectId=p.projectId,reload=p.reload,feedback=p.feedback||[],userRole=p.userRole||"",userName=p.userName||"";
-  var _show=useState(false),_edit=useState(null),_expanded=useState(null),_fbText=useState(""),_fbSaving=useState(false);
-  var sorted=reports.slice().sort(function(a,b){return(b.weekStart||b.created||"")>(a.weekStart||a.created||"")?1:-1});
-  function del(id){if(confirm("Delete?"))apiPost("deleteWeeklyReport",null,id).then(reload)}
+  var reports=p.reports,admin=p.admin,projectId=p.projectId,reload=p.reload,userRole=p.userRole||"",userName=p.userName||"";
+  var proj=p.proj||{};
+  var _show=useState(false),_edit=useState(null),_expanded=useState(null),_busy=useState(null);
+  // Permission model: project owner OR admin OR PMO can edit/publish/unpublish.
+  // Project owner is determined by matching userName to proj.manager.
+  var isProjectOwner=(proj.manager||"").toLowerCase()===(userName||"").toLowerCase();
+  var canManageReports=isProjectOwner||userRole==="admin"||userRole==="pmo"||userRole==="project_admin";
+  // Anyone who isn't a manager only sees Published reports.
+  // BOD, guests, regular viewers all see only Published.
+  var visibleReports=canManageReports?reports:reports.filter(function(r){
+    var st=(r.status||"Draft");
+    // Treat legacy "Submitted" and "Reviewed" statuses as visible (treat as Published)
+    return st==="Published"||st==="Reviewed"||st==="Submitted";
+  });
+  // Compute W-number from chronological order (W1 = oldest), then display newest-first
+  var chronological=visibleReports.slice().sort(function(a,b){return(a.weekStart||a.created||"")>(b.weekStart||b.created||"")?1:-1});
+  var wNumByID={};
+  chronological.forEach(function(r,i){wNumByID[r.id]=i+1});
+  // Display order: newest first
+  var sorted=visibleReports.slice().sort(function(a,b){return(b.weekStart||b.created||"")>(a.weekStart||a.created||"")?1:-1});
   var sections=[{k:"summary",l:"Executive Summary",i:"\uD83D\uDCCB"},{k:"achievements",l:"Key Achievements",i:"\u2705"},{k:"challenges",l:"Challenges / Blockers",i:"\u26A0\uFE0F"},{k:"nextWeekPlan",l:"Plan for Next Week",i:"\uD83D\uDCC5"},{k:"keyDecisions",l:"Key Decisions",i:"\uD83D\uDCA1"},{k:"risksEscalated",l:"Risks Escalated",i:"\uD83D\uDD34"}];
 
-  function submitReport(id){if(confirm("Submit this report for BOD review?"))apiPost("submitReport",null,id).then(function(){reload();showToast("Report submitted for review","success")})}
-  function addFeedback(reportId){
-    if(!_fbText[0].trim())return;
-    _fbSaving[1](true);
-    apiPost("addReportFeedback",{reportId:reportId,projectId:projectId,reviewer:userName,comment:_fbText[0].trim()}).then(function(){_fbText[1]("");reload()}).finally(function(){_fbSaving[1](false)})}
-  function autoGenerate(){apiPost("autoGenerateWeeklyReport",{}).then(function(d){reload();showToast("Draft report generated","success")})}
-
-  var stColors={Draft:{bg:"var(--border-light)",c:"#6B7280"},Submitted:{bg:"rgba(255,159,41,.1)",c:"#D97706"},Reviewed:{bg:"rgba(69,179,105,.15)",c:"#45B369"}};
-  var isBOD=userRole==="bod"||userRole==="admin";
-  var canFeedback=isBOD||["Agus Rahmad","Yusuf Setyabudhi","Firzah Mahdar"].indexOf(userName)>=0;
+  function del(id){
+    if(!confirm("Delete this report? This cannot be undone."))return;
+    _busy[1](id);
+    apiPost("deleteWeeklyReport",null,id).then(function(r){
+      if(r&&r.ok){showToast("Report deleted","success");reload()}
+      else{showToast((r&&r.error)||"Delete failed","error")}
+    }).catch(function(){showToast("Connection error","error")}).finally(function(){_busy[1](null)})
+  }
+  function publishReport(id){
+    if(!confirm("Publish this report? Once published, BOD and other viewers will be able to see it."))return;
+    _busy[1](id);
+    apiPost("publishReport",null,id).then(function(r){
+      if(r&&r.ok){showToast("Report published","success");reload()}
+      else{showToast((r&&r.error)||"Publish failed","error")}
+    }).catch(function(){showToast("Connection error","error")}).finally(function(){_busy[1](null)})
+  }
+  function unpublishReport(id){
+    if(!confirm("Revert this report to Draft? It will no longer be visible to BOD or other viewers."))return;
+    _busy[1](id);
+    apiPost("unpublishReport",null,id).then(function(r){
+      if(r&&r.ok){showToast("Report reverted to draft","success");reload()}
+      else{showToast((r&&r.error)||"Unpublish failed","error")}
+    }).catch(function(){showToast("Connection error","error")}).finally(function(){_busy[1](null)})
+  }
+  // Status colors. Includes legacy Submitted/Reviewed which are treated as Published.
+  var stColors={
+    Draft:{bg:"var(--border-light)",c:"#6B7280"},
+    Published:{bg:"rgba(69,179,105,.15)",c:"#45B369"},
+    Reviewed:{bg:"rgba(69,179,105,.15)",c:"#45B369"}, // legacy
+    Submitted:{bg:"rgba(69,179,105,.15)",c:"#45B369"}  // legacy
+  };
+  // Helper: is this report effectively published (handles legacy statuses)
+  function isPublishedLike(st){return st==="Published"||st==="Reviewed"||st==="Submitted"}
 
   return e("div",{style:{animation:"fadeIn .3s"}},
     e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
-      e("div",null,e("h2",{style:{fontSize:18,fontWeight:700,color:"var(--text-primary)"}},"Weekly Reports"),e("p",{style:{fontSize:13,color:"var(--text-secondary)"}},sorted.length+" report"+(sorted.length!==1?"s":""))),
-      admin&&e("div",{style:{display:"flex",gap:6}},
-        e("button",{className:"btn btn-ghost",style:{fontSize:11},onClick:autoGenerate},"Auto-Generate Draft"),
+      e("div",null,
+        e("h2",{style:{fontSize:18,fontWeight:700,color:"var(--text-primary)"}},"Weekly Reports"),
+        e("p",{style:{fontSize:13,color:"var(--text-secondary)"}},sorted.length+" report"+(sorted.length!==1?"s":"")+(canManageReports&&reports.length!==sorted.length?" \u2014 you see "+reports.length+" total ("+(reports.length-sorted.length)+" hidden from non-owners until published)":""))),
+      canManageReports&&e("div",{style:{display:"flex",gap:6}},
         e("button",{className:"btn btn-primary",onClick:function(){_show[1](true)}},"\u2795 New Report"))),
-    sorted.length===0?e("div",{className:"card",style:{padding:"48px 32px",textAlign:"center"}},e("div",{style:{fontSize:36,marginBottom:12}},"\uD83D\uDCCB"),e("p",{style:{fontSize:14,color:"var(--text-tertiary)"}},"No weekly reports yet.")):
+    canManageReports&&reports.length===0?e("div",{className:"card",style:{padding:"24px",marginBottom:14,background:"rgba(72,127,255,.05)",border:"1px solid rgba(72,127,255,.2)"}},
+      e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.6}},
+        e("strong",{style:{color:"#487FFF"}},"\uD83D\uDCA1 Automatic weekly reports: "),
+        "Drafts are auto-generated every Thursday morning for the just-completed Friday\u2013Thursday week. As project owner, you'll see them here as Drafts. Review the content, edit if needed, then click ",e("strong",null,"\uD83D\uDCE4 Publish")," to make them visible to BOD and other viewers.")):null,
+    sorted.length===0?e("div",{className:"card",style:{padding:"48px 32px",textAlign:"center"}},e("div",{style:{fontSize:36,marginBottom:12}},"\uD83D\uDCCB"),e("p",{style:{fontSize:14,color:"var(--text-tertiary)"}},canManageReports?"No weekly reports yet. New drafts will appear here every Thursday morning.":"No published reports yet.")):
     sorted.map(function(r,i){
       var isExp=_expanded[0]===r.id;
-      var st=r.status||"Draft";var stc=stColors[st]||stColors.Draft;
-      var rFeedback=feedback.filter(function(f){return f.reportId===r.id});
-      var reviewers=(r.reviewers||"").split(",").map(function(s){return s.trim()}).filter(Boolean);
-      var feedbackNames=rFeedback.map(function(f){return f.reviewer});
+      var st=r.status||"Draft";
+      var displaySt=isPublishedLike(st)?"Published":st;
+      var stc=stColors[st]||stColors.Draft;
+      var isBusy=_busy[0]===r.id;
       return e("div",{key:r.id,className:"card",style:{marginBottom:14,overflow:"hidden",animation:"fadeIn .2s ease "+(i*.04)+"s both"}},
         // Header
         e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"18px 24px",cursor:"pointer",background:isExp?"var(--bg-surface)":"transparent"},onClick:function(){_expanded[1](isExp?null:r.id)}},
           e("div",{style:{display:"flex",alignItems:"center",gap:12}},
-            e("div",{style:{width:40,height:40,borderRadius:10,background:st==="Reviewed"?"rgba(69,179,105,.08)":st==="Submitted"?"rgba(255,159,41,.08)":"rgba(72,127,255,.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:stc.c}},e("span",null,"W"+(i+1))),
+            e("div",{style:{width:40,height:40,borderRadius:10,background:isPublishedLike(st)?"rgba(69,179,105,.08)":"rgba(72,127,255,.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:stc.c}},e("span",null,"W"+(wNumByID[r.id]||(i+1)))),
             e("div",null,
               e("div",{style:{display:"flex",alignItems:"center",gap:8}},
                 e("span",{style:{fontSize:14,fontWeight:600}},fmtF(r.weekStart)+" \u2014 "+fmtF(r.weekEnd)),
-                e("span",{style:{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:4,background:stc.bg,color:stc.c}},st)),
+                e("span",{style:{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:4,background:stc.bg,color:stc.c}},displaySt)),
               e("div",{style:{fontSize:12,color:"var(--text-secondary)",marginTop:2}},r.summary?(r.summary.length>80?r.summary.substring(0,80)+"...":r.summary):"No summary"))
           ),
           e("div",{style:{display:"flex",alignItems:"center",gap:6}},
-            // Submit button for Draft
-            admin&&st==="Draft"&&e("button",{className:"btn btn-sm",style:{fontSize:10,padding:"4px 10px",background:"#487FFF",color:"#fff",border:"none"},onClick:function(ev){ev.stopPropagation();submitReport(r.id)}},"Submit"),
-            admin&&e("button",{className:"edit-icon",onClick:function(ev){ev.stopPropagation();_edit[1](r)}},"\u270F"),
-            admin&&e("button",{className:"del-icon",onClick:function(ev){ev.stopPropagation();del(r.id)}},"\u2715"),
+            // Publish button — only on Drafts, only for owner/admin/PMO
+            canManageReports&&st==="Draft"&&e("button",{className:"btn btn-sm",style:{fontSize:10,padding:"4px 10px",background:"#45B369",color:"#fff",border:"none",fontWeight:700,opacity:isBusy?.5:1},disabled:isBusy,onClick:function(ev){ev.stopPropagation();publishReport(r.id)}},isBusy?"\u23F3":"\uD83D\uDCE4 Publish"),
+            // Unpublish button — only on Published, only for owner/admin/PMO
+            canManageReports&&isPublishedLike(st)&&e("button",{className:"btn btn-sm",style:{fontSize:10,padding:"4px 10px",background:"var(--bg-surface)",color:"var(--text-secondary)",border:"1px solid var(--border)",opacity:isBusy?.5:1},disabled:isBusy,onClick:function(ev){ev.stopPropagation();unpublishReport(r.id)},title:"Revert to Draft"},isBusy?"\u23F3":"\u21A9 Unpublish"),
+            canManageReports&&e("button",{className:"edit-icon",onClick:function(ev){ev.stopPropagation();_edit[1](r)},title:"Edit"},"\u270F"),
+            canManageReports&&e("button",{className:"del-icon",disabled:isBusy,onClick:function(ev){ev.stopPropagation();del(r.id)},title:"Delete"},"\u2715"),
             e("button",{className:"btn btn-ghost",style:{fontSize:11,padding:"4px 12px"},onClick:function(ev){ev.stopPropagation();_expanded[1](isExp?null:r.id)}},isExp?"Hide":"Details \u25BE"))
         ),
         // Expanded content
@@ -3900,31 +4410,7 @@ function ProjReports(p){
             return e("div",{key:s.k,style:{marginTop:16}},
               e("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-secondary)",marginBottom:6}},s.i+" "+s.l),
               e("div",{style:{fontSize:13,color:"var(--text-primary)",whiteSpace:"pre-wrap",lineHeight:1.6,background:"var(--bg-surface)",padding:"12px 16px",borderRadius:8,borderLeft:"3px solid var(--border)"}},r[s.k]))
-          }),
-          // Reviewer status
-          reviewers.length>0&&e("div",{style:{marginTop:16}},
-            e("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-secondary)",marginBottom:8}},"Reviewers"),
-            e("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
-              reviewers.map(function(rv){
-                var hasFb=feedbackNames.indexOf(rv)>=0;
-                return e("span",{key:rv,style:{fontSize:11,padding:"3px 10px",borderRadius:6,background:hasFb?"rgba(69,179,105,.1)":"var(--bg-surface)",color:hasFb?"#45B369":"var(--text-tertiary)",border:"1px solid "+(hasFb?"#45B369":"var(--border)"),fontWeight:hasFb?600:400}},hasFb?"\u2713 "+rv:rv)}))),
-          // Feedback thread
-          rFeedback.length>0&&e("div",{style:{marginTop:16}},
-            e("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-secondary)",marginBottom:8}},"Feedback ("+rFeedback.length+")"),
-            rFeedback.sort(function(a,b){return(a.timestamp||"")>(b.timestamp||"")?1:-1}).map(function(fb){
-              return e("div",{key:fb.id,style:{display:"flex",gap:10,padding:"10px 0",borderBottom:"1px solid var(--border-light)"}},
-                e("div",{style:{width:28,height:28,borderRadius:"50%",background:"#487FFF",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,flexShrink:0}},getInitials(fb.reviewer)),
-                e("div",{style:{flex:1}},
-                  e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:4}},
-                    e("span",{style:{fontSize:12,fontWeight:600,color:"var(--text-primary)"}},fb.reviewer),
-                    e("span",{style:{fontSize:10,color:"var(--text-tertiary)"}},fmtF(fb.timestamp))),
-                  e("div",{style:{fontSize:12,color:"var(--text-secondary)",lineHeight:1.6}},fb.comment)))})),
-          // Add feedback form (BOD only, when report is Submitted)
-          canFeedback&&(st==="Submitted"||st==="Reviewed")&&e("div",{style:{marginTop:16,padding:"12px 14px",background:"var(--bg-surface)",borderRadius:8}},
-            e("div",{style:{fontSize:11,fontWeight:600,color:"var(--text-secondary)",marginBottom:6}},"Add Your Feedback"),
-            e("div",{style:{display:"flex",gap:8}},
-              e("textarea",{className:"input",value:_fbText[0],onChange:function(ev){_fbText[1](ev.target.value)},rows:2,placeholder:"Type your feedback or comment...",style:{flex:1,fontSize:12}}),
-              e("button",{className:"btn btn-primary btn-sm",style:{alignSelf:"flex-end"},disabled:!_fbText[0].trim()||_fbSaving[0],onClick:function(){addFeedback(r.id)}},"Send")))
+          })
         )
       )
     }),
@@ -4003,7 +4489,7 @@ function PrintAllView(p){
     e("table",{style:tbl},
       e("thead",null,e("tr",null,["#","Task","PIC","Start","End","Status"].map(function(h){return e("th",{key:h,style:th},h)}))),
       e("tbody",null,tasks.map(function(t,i){
-        return e("tr",{key:t.id},e("td",{style:td},i+1),e("td",{style:Object.assign({},td,{fontWeight:500,maxWidth:200})},t.name),e("td",{style:td},t.assignee||"\u2014"),e("td",{style:Object.assign({},td,{fontFamily:mono,fontSize:9})},fmtF(t.startDate)),e("td",{style:Object.assign({},td,{fontFamily:mono,fontSize:9})},fmtF(t.endDate)),e("td",{style:Object.assign({},td,{fontWeight:600,color:sc(t.taskStatus||t.status)})},t.taskStatus||t.status||"Not Started"))}))),
+        return e("tr",{key:t.id},e("td",{style:td},i+1),e("td",{style:Object.assign({},td,{fontWeight:500,maxWidth:200})},t.name),e("td",{style:td},formatAssignees(t.assignee)||"\u2014"),e("td",{style:Object.assign({},td,{fontFamily:mono,fontSize:9})},fmtF(t.startDate)),e("td",{style:Object.assign({},td,{fontFamily:mono,fontSize:9})},fmtF(t.endDate)),e("td",{style:Object.assign({},td,{fontWeight:600,color:sc(t.taskStatus||t.status)})},t.taskStatus||t.status||"Not Started"))}))),
 
     // ── BUDGET ──
     (bi.length>0||overallBudget>0)&&e("div",null,
@@ -4090,8 +4576,8 @@ function ProjStakeholders(p){
   var stakeholders=p.stakeholders||[],admin=p.admin,projectId=p.projectId,reload=p.reload,userRole=p.userRole;
   var mob=useMobile();
   var _showAdd=useState(false),_edit=useState(null);
-  var canEdit=userRole==="admin"||userRole==="pmo"||userRole==="project_admin"||userRole==="project_owner";
-  var canDelete=userRole==="admin"||userRole==="pmo";
+  var canEdit=userRole==="admin"||userRole==="pmo"||userRole==="project_admin"||userRole==="project_owner"||userRole==="gm";
+  var canDelete=userRole==="admin"||userRole==="pmo"||userRole==="gm";
   function del(id){if(confirm("Remove this stakeholder?"))apiPost("deleteStakeholder",null,id).then(reload)}
   var raciColors={R:"#487FFF",A:"#EF4A00",C:"#FF9F29",I:"#45B369"};
   var raciLabels={R:"Responsible",A:"Accountable",C:"Consulted",I:"Informed"};
@@ -4271,16 +4757,78 @@ function ProjLog(p){
 // ══════════════════════════════════════════
 // USER MANAGEMENT (Admin only)
 // ══════════════════════════════════════════
+function GuestRecordsModal(p){
+  var _tab=useState("sessions");
+  var _sessions=useState([]),_feedback=useState([]),_loading=useState(true);
+  function load(){
+    _loading[1](true);
+    Promise.all([
+      apiGet("getGuestSessions"),
+      apiGet("getGuestFeedback")
+    ]).then(function(results){
+      if(results[0]&&results[0].ok)_sessions[1](results[0].sessions||results[0].items||[]);
+      if(results[1]&&results[1].ok)_feedback[1](results[1].feedback||results[1].items||[]);
+    }).finally(function(){_loading[1](false)})
+  }
+  useEffect(function(){load()},[]);
+  // Sort newest first
+  var sortedSessions=_sessions[0].slice().sort(function(a,b){return(b.timestamp||b.created||"")>(a.timestamp||a.created||"")?1:-1});
+  var sortedFeedback=_feedback[0].slice().sort(function(a,b){return(b.timestamp||b.created||"")>(a.timestamp||a.created||"")?1:-1});
+  return e(Modal,{show:true,onClose:p.onClose,style:{maxWidth:820}},
+    e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      e("h3",{style:{fontSize:18,fontWeight:700}},"\uD83D\uDC64 Guest Activity Records"),
+      e("button",{className:"btn btn-ghost btn-sm",onClick:load,title:"Refresh"},"\u21BB")),
+    e("p",{style:{fontSize:12,color:"var(--text-secondary)",marginBottom:14}},"Records of external guests who logged in via the ext.guest shared account, with their registration details and feedback."),
+    // Tabs
+    e("div",{style:{display:"flex",gap:0,marginBottom:14,borderBottom:"2px solid var(--border)"}},
+      e("button",{className:"tab-btn "+(_tab[0]==="sessions"?"tab-active":"tab-inactive"),onClick:function(){_tab[1]("sessions")}},"\uD83D\uDD11 Sessions ("+sortedSessions.length+")"),
+      e("button",{className:"tab-btn "+(_tab[0]==="feedback"?"tab-active":"tab-inactive"),onClick:function(){_tab[1]("feedback")}},"\uD83D\uDCAC Feedback ("+sortedFeedback.length+")")),
+    _loading[0]?e(Spinner):
+    _tab[0]==="sessions"?(
+      sortedSessions.length===0?e("div",{style:{padding:40,textAlign:"center",color:"var(--text-tertiary)",fontSize:13}},"No guest sessions recorded yet."):
+      e("div",{style:{overflowX:"auto",maxHeight:400,overflowY:"auto"}},
+        e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
+          e("thead",{style:{position:"sticky",top:0,background:"var(--bg-card)",zIndex:1}},e("tr",{style:{borderBottom:"2px solid var(--border)"}},
+            ["Name","Company","Role","Logged In","Project Viewed"].map(function(h){return e("th",{key:h,style:{textAlign:"left",padding:"10px 8px",fontWeight:600,color:"var(--text-secondary)",fontSize:11}},h)}))),
+          e("tbody",null,sortedSessions.map(function(s,i){
+            return e("tr",{key:s.id||i,style:{borderBottom:"1px solid var(--border-light)"}},
+              e("td",{style:{padding:"10px 8px",fontWeight:600}},s.guestName||s.name||"-"),
+              e("td",{style:{padding:"10px 8px",color:"var(--text-secondary)"}},s.company||"-"),
+              e("td",{style:{padding:"10px 8px",color:"var(--text-secondary)"}},s.position||s.role||"-"),
+              e("td",{style:{padding:"10px 8px",fontSize:11,fontFamily:mono,color:"var(--text-tertiary)"}},s.timestamp||s.created||"-"),
+              e("td",{style:{padding:"10px 8px",fontSize:11,color:"var(--text-secondary)"}},s.projectName||s.projectId||"-"))
+          }))))
+    ):(
+      sortedFeedback.length===0?e("div",{style:{padding:40,textAlign:"center",color:"var(--text-tertiary)",fontSize:13}},"No guest feedback submitted yet."):
+      e("div",{style:{maxHeight:400,overflowY:"auto"}},
+        sortedFeedback.map(function(f,i){
+          return e("div",{key:f.id||i,style:{padding:"14px 16px",border:"1px solid var(--border)",borderRadius:8,marginBottom:10}},
+            e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}},
+              e("div",null,
+                e("div",{style:{fontSize:13,fontWeight:700}},f.guestName||f.name||"Anonymous"),
+                e("div",{style:{fontSize:11,color:"var(--text-tertiary)",marginTop:2}},(f.company||"")+(f.position?" \u00B7 "+f.position:""))),
+              e("div",{style:{fontSize:10,fontFamily:mono,color:"var(--text-tertiary)"}},f.timestamp||f.created||"")),
+            f.projectName&&e("div",{style:{fontSize:11,color:"#487FFF",marginBottom:6}},"\uD83D\uDCC1 "+f.projectName),
+            e("div",{style:{fontSize:13,color:"var(--text-primary)",lineHeight:1.55,whiteSpace:"pre-wrap",background:"var(--bg-surface)",padding:"10px 12px",borderRadius:6}},f.feedback||f.question||f.comment||""))
+        }))
+    ),
+    e("div",{style:{marginTop:16,display:"flex",justifyContent:"flex-end"}},
+      e("button",{className:"btn btn-ghost",onClick:p.onClose},"Close"))
+  )
+}
+
 function UserManagement(p){
-  var _users=useState([]),_loading=useState(true),_showAdd=useState(false),_edit=useState(null);
+  var _users=useState([]),_loading=useState(true),_showAdd=useState(false),_edit=useState(null),_showGuestRecords=useState(false);
   function load(){_loading[1](true);apiGet("getUsers").then(function(d){if(d.ok)_users[1](sortByName(d.users||[]))}).finally(function(){_loading[1](false)})}
   useEffect(function(){load()},[]);
-  var roleColors={admin:{bg:"rgba(239,74,0,.1)",c:"#EF4A00"},project_admin:{bg:"rgba(139,92,246,.1)",c:"#8B5CF6"},pmo:{bg:"rgba(72,127,255,.1)",c:"#487FFF"},project_owner:{bg:"rgba(255,159,41,.1)",c:"#D97706"},bod:{bg:"rgba(69,179,105,.1)",c:"#45B369"},external:{bg:"var(--border-light)",c:"#6B7280"}};
+  var roleColors={admin:{bg:"rgba(239,74,0,.1)",c:"#EF4A00"},project_admin:{bg:"rgba(139,92,246,.1)",c:"#8B5CF6"},pmo:{bg:"rgba(72,127,255,.1)",c:"#487FFF"},project_owner:{bg:"rgba(255,159,41,.1)",c:"#D97706"},gm:{bg:"rgba(8,145,178,.1)",c:"#0891B2"},bod:{bg:"rgba(69,179,105,.1)",c:"#45B369"},viewer:{bg:"rgba(107,114,128,.1)",c:"#6B7280"},collaborator:{bg:"rgba(168,85,247,.1)",c:"#A855F7"},external:{bg:"var(--border-light)",c:"#6B7280"}};
   function del(id){if(confirm("Delete this user?"))apiPost("deleteUser",null,id).then(load)}
   return e(Modal,{show:true,onClose:p.onClose,style:{maxWidth:700}},
     e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
       e("h3",{style:{fontSize:18,fontWeight:700}},"\uD83D\uDC65 User Management"),
-      e("button",{className:"btn btn-primary",onClick:function(){_showAdd[1](true)}},"\u2795 Add User")),
+      e("div",{style:{display:"flex",gap:8}},
+        e("button",{className:"btn btn-ghost btn-sm",onClick:function(){_showGuestRecords[1](true)}},"\uD83D\uDC64 Guest Records"),
+        e("button",{className:"btn btn-primary",onClick:function(){_showAdd[1](true)}},"\u2795 Add User"))),
     // Roles explanation
     e("div",{style:{background:"var(--bg-surface)",borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:11,color:"var(--text-secondary)",lineHeight:1.8}},
       e("strong",null,"System Roles: "),
@@ -4288,7 +4836,10 @@ function UserManagement(p){
       e("span",{style:{color:"#8B5CF6",fontWeight:600}},"project_admin")," \u2014 all projects, no budget edit. ",
       e("span",{style:{color:"#487FFF",fontWeight:600}},"pmo")," \u2014 monitor, reporting & budget. ",
       e("span",{style:{color:"#D97706",fontWeight:600}},"project_owner")," \u2014 own projects only. ",
+      e("span",{style:{color:"#0891B2",fontWeight:600}},"gm")," \u2014 BOD-like edit on assigned projects. ",
       e("span",{style:{color:"#45B369",fontWeight:600}},"bod")," \u2014 read-only dashboard. ",
+      e("span",{style:{color:"#6B7280",fontWeight:600}},"viewer")," \u2014 internal read-only. ",
+      e("span",{style:{color:"#A855F7",fontWeight:600}},"collaborator")," \u2014 update assigned tasks only. ",
       e("span",{style:{color:"var(--text-secondary)",fontWeight:600}},"external")," \u2014 assigned projects only."),
     _loading[0]?e(Spinner):
     e("div",{style:{overflowX:"auto"}},
@@ -4311,7 +4862,8 @@ function UserManagement(p){
       )
     ),
     _showAdd[0]&&e(UserModal,{user:null,onClose:function(){_showAdd[1](false)},onSaved:load}),
-    _edit[0]&&e(UserModal,{user:_edit[0],onClose:function(){_edit[1](null)},onSaved:load})
+    _edit[0]&&e(UserModal,{user:_edit[0],onClose:function(){_edit[1](null)},onSaved:load}),
+    _showGuestRecords[0]&&e(GuestRecordsModal,{onClose:function(){_showGuestRecords[1](false)}})
   );
 }
 
@@ -4320,16 +4872,53 @@ function UserModal(p){
   var allModules=["dashboard","projects","workspace","operations","crm","analytics","directory"];
   var defaultMods=u.allowedModules?u.allowedModules.split(",").map(function(s){return s.trim()}).filter(Boolean):allModules.slice();
   var _name=useState(u.name||""),_username=useState(u.username||""),_pass=useState(""),_role=useState(u.role||"project_owner"),_email=useState(u.email||""),_assigned=useState(u.assignedProjects||""),_position=useState(u.position||""),_mods=useState(defaultMods),_saving=useState(false),_err=useState("");
-  var _projects=useState([]),_selPids=useState((u.assignedProjects||"").split(",").map(function(s){return s.trim()}).filter(Boolean));
-  useEffect(function(){apiGet("getProjects").then(function(d){if(d.ok)_projects[1](d.projects||[])})},[]);
+  // _selPids stores PROJECT IDs (not names) to avoid comma-collision bugs on names like "Pengembangan Wilayah: Melak, Samarinda"
+  // Initial value: parse comma-separated assignedProjects, may contain names from legacy data — normalized to IDs after _projects loads
+  var _selPids=useState((u.assignedProjects||"").split(",").map(function(s){return s.trim()}).filter(Boolean));
+  var _projects=useState([]);
+  useEffect(function(){
+    apiGet("getProjects").then(function(d){
+      if(d&&d.ok){
+        var projs=d.projects||[];
+        _projects[1](projs);
+        // Normalize: convert any legacy name-based entries to IDs.
+        // Also recover from comma-corruption by trying to join consecutive tokens.
+        var raw=(u.assignedProjects||"").split(",").map(function(s){return s.trim()}).filter(Boolean);
+        var normalized=[];
+        var i=0;
+        while(i<raw.length){
+          var tok=raw[i];
+          // 1. If token is already a known project ID, use it directly
+          var byId=projs.filter(function(p2){return p2.id===tok})[0];
+          if(byId){normalized.push(byId.id);i++;continue}
+          // 2. Try exact name match (case-insensitive)
+          var lowerTok=tok.toLowerCase();
+          var byName=projs.filter(function(p2){return(p2.name||"").toLowerCase()===lowerTok})[0];
+          if(byName){normalized.push(byName.id);i++;continue}
+          // 3. Try joining with the next token (recovery from comma-in-name corruption)
+          if(i+1<raw.length){
+            var joined=tok+", "+raw[i+1];
+            var byJoinedName=projs.filter(function(p2){return(p2.name||"").toLowerCase()===joined.toLowerCase()})[0];
+            if(byJoinedName){normalized.push(byJoinedName.id);i+=2;continue}
+          }
+          // 4. Couldn't match — keep the raw token for visibility (will show as un-checked checkbox)
+          i++;
+        }
+        // De-dupe
+        var seen={},dedup=[];
+        normalized.forEach(function(x){if(!seen[x]){seen[x]=true;dedup.push(x)}});
+        _selPids[1](dedup);
+      }
+    })
+  },[]);
   function toggleMod(m){var cur=_mods[0].slice();var i=cur.indexOf(m);if(i>=0)cur.splice(i,1);else cur.push(m);_mods[1](cur)}
-  function togglePid(name){var cur=_selPids[0].slice();var i=cur.indexOf(name);if(i>=0)cur.splice(i,1);else cur.push(name);_selPids[1](cur)}
+  function togglePid(id){var cur=_selPids[0].slice();var i=cur.indexOf(id);if(i>=0)cur.splice(i,1);else cur.push(id);_selPids[1](cur)}
   function save(){
     if(!_username[0].trim()){_err[1]("Username is required");return}
     if(!isEdit&&!_pass[0].trim()){_err[1]("Password is required");return}
     _saving[1](true);_err[1]("");
     var data={name:_name[0],username:_username[0],role:_role[0],email:_email[0],position:_position[0],allowedModules:_role[0]==="admin"?allModules.join(","):_mods[0].join(",")};
-    if(_role[0]==="external")data.assignedProjects=_selPids[0].join(",");
+    if(_role[0]==="external"||_role[0]==="gm")data.assignedProjects=_selPids[0].join(",");
     else if(_role[0]==="project_owner")data.assignedProjects=_assigned[0];
     else data.assignedProjects="";
     if(_pass[0])data.password=_pass[0];
@@ -4354,7 +4943,10 @@ function UserModal(p){
         e("option",{value:"project_admin"},"Project Admin \u2014 All projects, no budget"),
         e("option",{value:"pmo"},"PMO Officer \u2014 Monitor all, reporting & budget"),
         e("option",{value:"project_owner"},"Project Owner \u2014 Own projects only"),
+        e("option",{value:"gm"},"General Manager \u2014 BOD-like edit on assigned projects"),
         e("option",{value:"bod"},"BOD \u2014 Read-only dashboard"),
+        e("option",{value:"viewer"},"Viewer \u2014 Internal read-only (all projects)"),
+        e("option",{value:"collaborator"},"Collaborator \u2014 Update assigned tasks only"),
         e("option",{value:"external"},"External / Guest \u2014 Specific projects only"))),
       e("div",{style:{flex:1}},e("label",{className:"label"},"Email"),e("input",{className:"input",type:"email",value:_email[0],onChange:function(ev){_email[1](ev.target.value)},placeholder:"email@company.com"}))
     ),
@@ -4370,13 +4962,15 @@ function UserModal(p){
       e("label",{className:"label"},"Manager Name (must match project\u2019s Manager field)"),
       e("input",{className:"input",value:_assigned[0],onChange:function(ev){_assigned[1](ev.target.value)},placeholder:"Name as shown in project Manager field"}),
       e("div",{style:{fontSize:10,color:"var(--text-tertiary)",marginTop:4}},"Project Owner sees projects where Manager matches their Full Name above.")),
-    // External/Guest — project checkboxes (Fix 8 & 9)
-    _role[0]==="external"&&e("div",{style:{background:"var(--bg-surface)",borderRadius:8,padding:"12px 16px",marginBottom:12}},
-      e("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-secondary)",marginBottom:8}},"PROJECT ACCESS"),
+    // External/Guest/GM — project checkboxes
+    (_role[0]==="external"||_role[0]==="gm")&&e("div",{style:{background:"var(--bg-surface)",borderRadius:8,padding:"12px 16px",marginBottom:12}},
+      e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+        e("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-secondary)"}},_role[0]==="gm"?"ASSIGNED PROJECTS (GM responsible)":"PROJECT ACCESS"),
+        _projects[0].length>0&&e("div",{style:{fontSize:10,color:"var(--text-tertiary)"}},_selPids[0].length+" of "+_projects[0].length+" selected")),
       _projects[0].length===0?e("div",{style:{fontSize:11,color:"var(--text-tertiary)"}},"Loading projects..."):
       e("div",{style:{maxHeight:200,overflowY:"auto"}},
         _projects[0].map(function(pr){return e("label",{key:pr.id,style:{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--border)",cursor:"pointer",fontSize:12}},
-          e("input",{type:"checkbox",checked:_selPids[0].indexOf(pr.name)>=0,onChange:function(){togglePid(pr.name)},style:{accentColor:"#487FFF"}}),
+          e("input",{type:"checkbox",checked:_selPids[0].indexOf(pr.id)>=0,onChange:function(){togglePid(pr.id)},style:{accentColor:"#487FFF"}}),
           e("div",{style:{flex:1}},e("span",{style:{fontWeight:500}},pr.name),e("span",{style:{fontSize:10,color:"var(--text-tertiary)",marginLeft:6}},pr.status||"")))}))),
     // Role description
     e("div",{style:{background:"var(--bg-surface)",borderRadius:8,padding:"10px 12px",marginBottom:16,fontSize:11,color:"var(--text-secondary)"}},
@@ -4384,7 +4978,10 @@ function UserModal(p){
       _role[0]==="project_admin"?"\u2699 Edit all projects, tasks, risks, resources. Cannot manage users or edit budgets":
       _role[0]==="pmo"?"\uD83D\uDCCB View all projects. Can edit tasks, risks, issues, budget plan & realization, reports":
       _role[0]==="project_owner"?"\uD83D\uDC64 Can see and edit assigned projects including budget plan & realization":
+      _role[0]==="gm"?"\uD83C\uDFAF General Manager: BOD-like edit power scoped to assigned projects only. Used for division heads (e.g., Welly, Sophan).":
       _role[0]==="bod"?"\uD83D\uDCCA Read-only access to PMO dashboard and all project details":
+      _role[0]==="viewer"?"\uD83D\uDC41 Internal read-only across all projects. For new hires, compliance, audit, department heads.":
+      _role[0]==="collaborator"?"\u2705 Can update status only on tasks where they are the assignee. Workspace-only view, no project management.":
       _role[0]==="external"?"\uD83D\uDD12 Read-only access to selected projects only":
       "Select a role"),
     e("div",{style:{display:"flex",gap:10}},
@@ -6458,7 +7055,7 @@ function EmployeeDirectory(){
   useEffect(function(){
     apiGet("getUsers").then(function(d){if(d.ok)_users[1](sortByName((d.users||[]).filter(function(u){return u.username!=="admin"})))}).finally(function(){_loading[1](false)})},[]);
 
-  var roleColors={admin:{bg:"rgba(239,74,0,.1)",c:"#EF4A00"},project_admin:{bg:"rgba(139,92,246,.1)",c:"#8B5CF6"},pmo:{bg:"rgba(72,127,255,.1)",c:"#487FFF"},project_owner:{bg:"rgba(255,159,41,.1)",c:"#D97706"},bod:{bg:"rgba(69,179,105,.1)",c:"#45B369"},external:{bg:"var(--border-light)",c:"#6B7280"}};
+  var roleColors={admin:{bg:"rgba(239,74,0,.1)",c:"#EF4A00"},project_admin:{bg:"rgba(139,92,246,.1)",c:"#8B5CF6"},pmo:{bg:"rgba(72,127,255,.1)",c:"#487FFF"},project_owner:{bg:"rgba(255,159,41,.1)",c:"#D97706"},gm:{bg:"rgba(8,145,178,.1)",c:"#0891B2"},bod:{bg:"rgba(69,179,105,.1)",c:"#45B369"},viewer:{bg:"rgba(107,114,128,.1)",c:"#6B7280"},collaborator:{bg:"rgba(168,85,247,.1)",c:"#A855F7"},external:{bg:"var(--border-light)",c:"#6B7280"}};
 
   var sq=_search[0].toLowerCase();
   var filtered=_users[0].filter(function(u){
@@ -7414,7 +8011,7 @@ var GUEST_COMPANIES=["PT Surveyor Carbon Consulting Indonesia","PT Surveyor Indo
 function GuestRegistrationModal(p){
   var _name=useState(""),_company=useState(GUEST_COMPANIES[0]),_position=useState(""),_err=useState(""),_saving=useState(false);
   function submit(){
-    if(_name[0].trim().length<10){_err[1]("Please enter your full name (at least 10 characters)");return}
+    if(_name[0].trim().length<8){_err[1]("Please enter your full name (at least 8 characters)");return}
     if(!_position[0].trim()){_err[1]("Please enter your role / position");return}
     _saving[1](true);
     apiPost("registerGuest",{guestName:_name[0].trim(),company:_company[0],position:_position[0].trim()}).then(function(r){
@@ -7430,8 +8027,8 @@ function GuestRegistrationModal(p){
         e("p",{style:{fontSize:13,color:"var(--text-secondary)"}},"Please identify yourself before accessing the portal")),
       e("div",{style:{marginBottom:12}},
         e("label",{className:"label"},"Full Name *"),
-        e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value);_err[1]("")},placeholder:"Enter your full name (min. 10 characters)",style:{marginBottom:4}}),
-        _name[0]&&_name[0].length<10&&e("span",{style:{fontSize:10,color:"#FF9F29"}},_name[0].length+"/10 characters")),
+        e("input",{className:"input",value:_name[0],onChange:function(ev){_name[1](ev.target.value);_err[1]("")},placeholder:"Enter your full name (min. 8 characters)",style:{marginBottom:4}}),
+        _name[0]&&_name[0].length<8&&e("span",{style:{fontSize:10,color:"#FF9F29"}},_name[0].length+"/8 characters")),
       e("div",{style:{marginBottom:12}},
         e("label",{className:"label"},"Company *"),
         e("select",{className:"select",value:_company[0],onChange:function(ev){_company[1](ev.target.value)}},
@@ -7487,7 +8084,7 @@ function GuestFeedbackModal(p){
 function App(){
   // Session persistence via sessionStorage (survives refresh, clears on tab close)
   var savedSession=null;try{savedSession=JSON.parse(sessionStorage.getItem("scci_session"))}catch(x){}
-  if(savedSession)window._userCtx={role:savedSession.role||"",name:savedSession.name||""};
+  if(savedSession)window._userCtx={role:savedSession.role||"",name:savedSession.name||"",assignedProjects:savedSession.assignedProjects||""};
   var _connected=useState(!!getApiUrl()),connected=_connected[0];
   var _allProjects=useState([]);
   var _tasksByPIC=useState([]);
@@ -7496,8 +8093,15 @@ function App(){
   var _userRole=useState(savedSession?savedSession.role:""),userRole=_userRole[0];
   var _userName=useState(savedSession?savedSession.name:""),userName=_userName[0];
   var _userPhoto=useState(savedSession?savedSession.photo:""),userPhoto=_userPhoto[0];
+  var _userPosition=useState(savedSession?(savedSession.position||""):""),userPosition=_userPosition[0];
   var _assignedPids=useState(savedSession?savedSession.ap:""),assignedPids=_assignedPids[0];
   var _userMods=useState(savedSession&&savedSession.mods?savedSession.mods.split(","):["dashboard","projects","workspace","operations","crm","analytics","directory"]),userMods=_userMods[0];
+  // View-As-External preview mode (Session 2C) — trust-based, banner only, not persisted across refresh.
+  // While true, the user (BOD/GM/PMO/admin) sees what an external user would see, but their backend
+  // session is unchanged. Used for BOD alignment with holding company view.
+  var _viewAsExternal=useState(false),viewAsExternal=_viewAsExternal[0];
+  // Roles that can use the View-As-External toggle
+  var canViewAsExternal=userRole==="bod"||userRole==="gm"||userRole==="pmo"||userRole==="admin";
   var _showUsers=useState(false);
   var _sidebarOpen=useState(false);
   var _notifications=useState([]);
@@ -7532,16 +8136,47 @@ function App(){
   // Session timeout (30 min idle = auto-logout)
   var sessionTO=useSessionTimeout(function(){_admin[1](false);try{sessionStorage.removeItem("scci_session")}catch(x){}});
 
-  // Role-based project filtering
-  // For external users, prefer EXACT project ID match. Fall back to substring name match
-  // only when the assigned value doesn't look like an ID (legacy support).
+  // Role-based project filtering — supports all roles including gm, collaborator, viewer
+  // - admin/project_admin/pmo/bod/viewer: see ALL projects (viewer is read-only)
+  // - gm: sees ALL projects (Option A1) — accountability via assignedProjects governs EDIT, not visibility
+  // - project_owner: sees only projects where they're the manager
+  // - collaborator: sees only projects where they have at least one task assigned
+  // - external: sees only projects in assignedProjects (checkpoint format read-only)
   var isGuest=userRole==="external"&&!assignedPids;
-  var projects=_allProjects[0].filter(function(pr){
-    if(userRole==="admin"||userRole==="project_admin"||userRole==="pmo"||userRole==="bod")return true;
+  // Pre-compute project IDs where this collaborator has assigned tasks
+  // _tasksByPIC is an array of {name, tasks: [{projectId, ...}], ...}
+  // Find the entry matching this user and collect projectIds from their tasks
+  var collaboratorProjectIds={};
+  if(userRole==="collaborator"&&_tasksByPIC[0]&&_tasksByPIC[0].length>0){
+    var myPicEntries=_tasksByPIC[0].filter(function(p2){return(p2.name||"").toLowerCase()===(userName||"").toLowerCase()});
+    myPicEntries.forEach(function(p2){
+      (p2.tasks||[]).forEach(function(t){if(t.projectId)collaboratorProjectIds[t.projectId]=true});
+    });
+  }
+  // Pre-compute GM's assigned project list (supports both IDs and names from picker)
+  // The picker stores names, but legacy data may have IDs. Match against both.
+  var gmAssignedTokens=[];
+  if(userRole==="gm"&&assignedPids){
+    gmAssignedTokens=assignedPids.split(",").map(function(s){return s.trim().toLowerCase()}).filter(Boolean);
+  }
+  function gmCanEditProject(pr){
+    if(!pr||gmAssignedTokens.length===0)return false;
+    if(gmAssignedTokens.indexOf((pr.id||"").toLowerCase())>=0)return true;
+    if(gmAssignedTokens.indexOf((pr.name||"").toLowerCase())>=0)return true;
+    return false;
+  }
+  var _allRoleFiltered=_allProjects[0].filter(function(pr){
+    if(userRole==="admin"||userRole==="project_admin"||userRole==="pmo"||userRole==="bod"||userRole==="viewer"||userRole==="gm")return true;
     if(userRole==="project_owner")return(pr.manager||"").toLowerCase()===(userName||"").toLowerCase();
+    if(userRole==="collaborator"){
+      return collaboratorProjectIds[pr.id]===true;
+    }
     if(userRole==="external"){
-      if(!assignedPids)return true; // Guest sees all projects read-only
+      // External users MUST have explicit assignedProjects. Empty list = no projects visible.
+      // (Previously this fell through to "show all" which leaked new projects to ext.guest.)
+      if(!assignedPids)return false;
       var ids=assignedPids.split(",").map(function(s){return s.trim()}).filter(Boolean);
+      if(ids.length===0)return false;
       // First pass: exact project ID match (preferred)
       if(ids.indexOf(pr.id)>=0)return true;
       // Second pass: exact name match (case-insensitive)
@@ -7551,6 +8186,10 @@ function App(){
     }
     return true;
   });
+  // Split into real projects (default view) and templates (separate view)
+  var isTpl=function(pr){return pr.isTemplate==="true"||pr.isTemplate===true};
+  var projects=_allRoleFiltered.filter(function(pr){return !isTpl(pr)});
+  var templateProjects=_allRoleFiltered.filter(isTpl);
 
   // Restore project/tab from session AFTER projects load — validates against allowed list
   useEffect(function(){
@@ -7566,10 +8205,14 @@ function App(){
       }
     }},[_allProjects[0].length]);
 
-  // Permission helpers
+  // Permission helpers — centralized so all role checks use the same logic
   var canManageUsers=userRole==="admin";
   var canCreateProject=userRole==="admin"||userRole==="project_admin"||userRole==="pmo"||userRole==="project_owner";
-  var canEditProject=userRole==="admin"||userRole==="project_admin"||userRole==="project_owner"||userRole==="pmo";
+  var canEditProject=userRole==="admin"||userRole==="project_admin"||userRole==="project_owner"||userRole==="pmo"||userRole==="gm";
+  // Read-only roles cannot perform any write actions
+  var isReadOnly=userRole==="bod"||userRole==="viewer"||userRole==="external";
+  // Roles that should never see write/edit UI even on individual items
+  var isCollabOrLower=userRole==="collaborator"||isReadOnly;
 
   function loadProjects(){_loading[1](true);apiGet("getProjects").then(function(d){if(d.ok){_allProjects[1](d.projects||[]);_tasksByPIC[1](d.tasksByPIC||[])}}).catch(function(){}).finally(function(){_loading[1](false)})}
 
@@ -7586,12 +8229,16 @@ function App(){
 
   // Auto-navigate external user to first assigned project
   // For ext.guest specifically, always auto-nav (ignore any stale saved lastProject)
+  // and pick alphabetically first to match the sidebar order
   var _autoNav=useState(false);
   useEffect(function(){
     if(userRole==="external"&&!_autoNav[0]&&projects.length>0&&!selectedProject){
       // For non-guest external users, respect saved lastProject if present
       if(!isExtGuest&&savedSession&&savedSession.lastProject)return;
-      _autoNav[1](true);_selectedProject[1](projects[0].id)}
+      var firstProject=isExtGuest
+        ?projects.slice().sort(function(a,b){return(a.name||"").localeCompare(b.name||"")})[0]
+        :projects[0];
+      _autoNav[1](true);_selectedProject[1](firstProject.id)}
   },[projects.length]);
 
   // Global search keyboard shortcut (Cmd+K / Ctrl+K)
@@ -7632,24 +8279,27 @@ function App(){
           _pwSaving2[1](true);
           apiPost("updateUser",{password:_newPW2[0]},_forceChange[0].id).then(function(){
             var fc=_forceChange[0];_forceChange[1](null);
-            _admin[1](true);_userRole[1](fc.role||"bod");_userName[1](fc.name||"User");_userPhoto[1](fc.photo||"");_assignedPids[1](fc.assignedProjects||"");
+            _admin[1](true);_userRole[1](fc.role||"bod");_userName[1](fc.name||"User");_userPhoto[1](fc.photo||"");_assignedPids[1](fc.assignedProjects||"");_userPosition[1](fc.position||"");
             var modList=(fc.allowedModules||"dashboard,projects,workspace,operations,crm,analytics,directory").split(",");_userMods[1](modList);
-            window._userCtx={role:fc.role||"bod",name:fc.name||"User"};
+            window._userCtx={role:fc.role||"bod",name:fc.name||"User",assignedProjects:fc.assignedProjects||""};
             showToast("Password set successfully! Welcome to OneHub.","success");
           }).finally(function(){_pwSaving2[1](false)})
         }},_pwSaving2[0]?"Setting password...":"Set Password & Continue")))
     :e(LoginModal,{show:true,onClose:function(){},
       onForceChange:function(authData){_forceChange[1](authData)},
-      onLogin:function(role,name,ap,photo,mods,username){
-      _admin[1](true);_userRole[1](role||"bod");_userName[1](name||"User");_userPhoto[1](photo||"");_assignedPids[1](ap||"");
+      onLogin:function(role,name,ap,photo,mods,username,position){
+      _admin[1](true);_userRole[1](role||"bod");_userName[1](name||"User");_userPhoto[1](photo||"");_assignedPids[1](ap||"");_userPosition[1](position||"");
       _loginUsername[1](username||"");
       var modList=(mods||"dashboard,projects,workspace,operations,crm,analytics,directory").split(",");_userMods[1](modList);
-      window._userCtx={role:role||"bod",name:name||"User"};
+      window._userCtx={role:role||"bod",name:name||"User",assignedProjects:ap||""};
       var landing="mgmt";
       if(role==="project_owner")landing="mgmt";
       else if(role==="bod")landing="mgmt";
       else if(role==="pmo")landing="mgmt";
       else if(role==="admin")landing="mgmt";
+      else if(role==="gm")landing="mgmt"; // GM lands on management dashboard scoped to assigned projects
+      else if(role==="viewer")landing="mgmt"; // Internal viewer lands on read-only management dashboard
+      else if(role==="collaborator")landing="tasks"; // Collaborators land on their workspace tasks
       else if(role==="external"&&modList.indexOf("crm")>=0)landing="crm";
       else if(role==="external")landing="mgmt";
       if(modList.indexOf("dashboard")<0){
@@ -7661,7 +8311,7 @@ function App(){
       _page[1](landing);
       // Show guest registration modal for ext.guest
       if(username==="ext.guest"){_showGuestReg[1](true)}
-      try{sessionStorage.setItem("scci_session",JSON.stringify({role:role||"bod",name:name||"User",ap:ap||"",photo:photo||"",mods:mods||"",landing:landing,username:username||""}))}catch(x){}
+      try{sessionStorage.setItem("scci_session",JSON.stringify({role:role||"bod",name:name||"User",ap:ap||"",assignedProjects:ap||"",photo:photo||"",position:position||"",mods:mods||"",landing:landing,username:username||""}))}catch(x){}
     }});
 
   // ── Announcement Data ──
@@ -7716,7 +8366,23 @@ function App(){
         return[
         !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_dashExpand[1](!_dashExpand[0])},style:{fontWeight:600}},"\uD83D\uDCCA"," Projects ",e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_dashExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
         !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&hasOverseas&&e("li",{className:"sidebar-item"+(page==="overseas"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("overseas");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDF0F"," Overseas Project")),
-        !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&hasDomestic&&e("li",{className:"sidebar-item"+(page==="domestic"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("domestic");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDFE2"," Domestic Project"))
+        !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&hasDomestic&&e("li",{className:"sidebar-item"+(page==="domestic"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("domestic");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83C\uDFE2"," Domestic Project")),
+        !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&canCreateProject&&templateProjects.length>0&&e("li",{className:"sidebar-item"+(page==="templates"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("templates");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},"\uD83D\uDCCB"," Templates ",e("span",{style:{fontSize:10,color:"var(--text-tertiary)",marginLeft:4}},"("+templateProjects.length+")"))),
+        // ── ext.guest project list ── only for ext.guest, lists assigned projects as clickable sidebar items
+        isExtGuest&&projects.length>0&&e("li",{className:"sidebar-divider"},"My Projects"),
+        isExtGuest&&projects.length>0&&projects.slice().sort(function(a,b){return(a.name||"").localeCompare(b.name||"")}).map(function(extPr){
+          var isActive=selectedProject===extPr.id;
+          var firstChar=(extPr.name||"?").charAt(0).toUpperCase();
+          return e("li",{key:"extp-"+extPr.id,className:"sidebar-item"+(isActive?" active":"")},
+            e("button",{onClick:function(){
+              // Switching projects from sidebar — clear any saved tab and load fresh
+              _selectedProject[1](extPr.id);
+              _targetTab[1](null);
+              _sidebarOpen[1](false);
+            },style:{display:"flex",alignItems:"center",gap:8,fontSize:12}},
+              e("span",{style:{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:5,background:isActive?"#487FFF":"var(--bg-surface)",color:isActive?"#fff":"var(--text-secondary)",fontSize:11,fontWeight:700,flexShrink:0}},firstChar),
+              e("span",{style:{flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},extPr.name)))
+        })
         ]}()),
 
         // ── Digital Space ── filtered by modules
@@ -7738,14 +8404,14 @@ function App(){
         // ── Management ──
         e("li",{className:"sidebar-divider"},t("sb_management")),
         canManageUsers&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_showUsers[1](true);_sidebarOpen[1](false)}},"\uD83D\uDC65"," ",t("sb_users"))),
-        (userRole==="admin"||userRole==="pmo"||userRole==="bod")&&e("li",{className:"sidebar-item"+(page==="portfolio-log"?" active":"")},e("button",{onClick:function(){_page[1]("portfolio-log");_selectedProject[1](null);_sidebarOpen[1](false)}}," ",t("sb_actLog"))),
+        (userRole==="admin"||userRole==="pmo"||userRole==="bod"||userRole==="gm"||userRole==="viewer")&&e("li",{className:"sidebar-item"+(page==="portfolio-log"?" active":"")},e("button",{onClick:function(){_page[1]("portfolio-log");_selectedProject[1](null);_sidebarOpen[1](false)}}," ",t("sb_actLog"))),
         e("li",{className:"sidebar-divider"},t("sb_account")),
         // Dark mode + Language toggles
         e("li",{className:"sidebar-item"},e("button",{onClick:function(){toggleDarkMode();_forceR[1](!_forceR[0])}},_isDark?"\u2600\uFE0F":"\uD83C\uDF19"," ",_isDark?t("lightMode"):t("darkMode"))),
         e("li",{className:"sidebar-item"},e("button",{onClick:function(){var nl=_lang==="en"?"id":"en";setLang(nl);_forceR[1](!_forceR[0])}},"\uD83C\uDF10"," ",_lang==="en"?"Bahasa Indonesia":"English")),
         e("li",{className:"sidebar-item"},e("div",{style:{display:"flex",alignItems:"center",gap:10,padding:"10px 14px"}},
           e(Avatar,{name:userName,photo:userPhoto,size:32,fontSize:12}),
-          e("div",{style:{flex:1,minWidth:0}},e("div",{style:{fontSize:12,fontWeight:600,color:"var(--text-primary)"}},userName||"User"),e("div",{style:{fontSize:10,color:"var(--text-tertiary)"}},roleLabel(userRole))))),
+          e("div",{style:{flex:1,minWidth:0}},e("div",{style:{fontSize:12,fontWeight:600,color:"var(--text-primary)"}},userName||"User"),e("div",{style:{fontSize:10,color:"var(--text-tertiary)"}},userPosition||roleLabel(userRole))))),
         e("li",{className:"sidebar-item"},e("button",{onClick:function(){_showAbout[1](true);_sidebarOpen[1](false)},style:{fontSize:12,color:"var(--text-tertiary)"}},"\u2139\uFE0F"," About")),
         e("li",{className:"sidebar-item"},e("button",{onClick:function(){
           if(isExtGuest&&_guestInfo[0]&&!_guestInfo[0].feedbackSubmitted){_showGuestFeedback[1](true);_sidebarOpen[1](false);return}
@@ -7762,20 +8428,73 @@ function App(){
         e("div",{className:"navbar-search",onClick:function(){_showSearch[1](true)},style:{cursor:"pointer"}},e("span",{className:"navbar-search-icon"},"\uD83D\uDD0D"),e("input",{placeholder:"Search... (\u2318K)",readOnly:true,style:{cursor:"pointer"}})),
         e("div",{className:"navbar-actions"},
           e("button",{className:"icon-btn",onClick:loadProjects,title:"Refresh"},"\u21BB"),
-          e(NotificationBell,{notifications:_notifications[0],onRead:function(i){_notifications[1](_notifications[0].map(function(n,j){return j===i?Object.assign({},n,{read:true}):n}))},onReadAll:function(){_notifications[1](_notifications[0].map(function(n){return Object.assign({},n,{read:true})}))},onClear:function(){_notifications[1]([]);try{localStorage.setItem("scci_notif_cleared",new Date().toISOString())}catch(x){};apiPost("clearNotifications",{user:userName,role:userRole})},onNavigate:function(pid,tab){_selectedProject[1](pid);_page[1]("mgmt");if(tab)_targetTab[1](tab)}}),
+          // View-As-External toggle (BOD/GM/PMO/admin only)
+          canViewAsExternal&&e("button",{
+            className:"icon-btn",
+            onClick:function(){
+              var entering=!viewAsExternal;
+              _viewAsExternal[1](entering);
+              if(entering){
+                // Auto-select the first project so the external view actually renders.
+                // External users always land on a project — there's no project list view for them.
+                _page[1]("mgmt");
+                _targetTab[1](null);
+                if(!selectedProject&&projects.length>0){
+                  var sorted=projects.slice().sort(function(a,b){return(a.name||"").localeCompare(b.name||"")});
+                  _selectedProject[1](sorted[0].id);
+                }
+              }else{
+                // Exiting preview — return to management dashboard
+                _selectedProject[1](null);
+                _targetTab[1](null);
+              }
+            },
+            title:viewAsExternal?"Exit External Preview":"View as External User",
+            style:{background:viewAsExternal?"#FBBF24":"transparent",color:viewAsExternal?"#78350F":"var(--text-secondary)",fontWeight:viewAsExternal?700:400}
+          },viewAsExternal?"\uD83D\uDC41 Exit Preview":"\uD83D\uDC41"),
+          !isExtGuest&&e(NotificationBell,{notifications:_notifications[0],onRead:function(i){_notifications[1](_notifications[0].map(function(n,j){return j===i?Object.assign({},n,{read:true}):n}))},onReadAll:function(){_notifications[1](_notifications[0].map(function(n){return Object.assign({},n,{read:true})}))},onClear:function(){_notifications[1]([]);try{localStorage.setItem("scci_notif_cleared",new Date().toISOString())}catch(x){};apiPost("clearNotifications",{user:userName,role:userRole})},onNavigate:function(pid,tab){_selectedProject[1](pid);_page[1]("mgmt");if(tab)_targetTab[1](tab)}}),
           !mob&&e("span",{style:{fontSize:12,color:"var(--text-tertiary)"}},dateStr),
           e("div",{className:"user-badge",onClick:function(){_showProfile[1](true)}},
             e(Avatar,{name:userName,photo:userPhoto,size:36,fontSize:13}),
-            !mob&&e("div",null,e("div",{style:{fontSize:12,fontWeight:600,color:"var(--text-primary)"}},userName||"User"),e("div",{style:{fontSize:10,color:"var(--text-tertiary)"}},roleLabel(userRole))))
+            !mob&&e("div",null,e("div",{style:{fontSize:12,fontWeight:600,color:"var(--text-primary)"}},userName||"User"),e("div",{style:{fontSize:10,color:"var(--text-tertiary)"}},userPosition||roleLabel(userRole))))
         )),
+
+      // Preview-as-external banner — sticky, impossible to miss
+      viewAsExternal&&e("div",{
+        onClick:function(){_viewAsExternal[1](false)},
+        style:{
+          background:"linear-gradient(90deg, #FBBF24 0%, #F59E0B 100%)",
+          color:"#78350F",
+          padding:"12px 24px",
+          fontSize:13,
+          fontWeight:700,
+          textAlign:"center",
+          cursor:"pointer",
+          position:"sticky",
+          top:0,
+          zIndex:100,
+          boxShadow:"0 2px 8px rgba(245,158,11,.3)",
+          borderBottom:"2px solid #D97706"
+        }
+      },"\uD83D\uDC41 PREVIEW MODE \u2014 Viewing as External User. Data shown matches what holding company sees. Click to exit \u2192"),
 
       // Main body
       e("div",{className:"dashboard-main-body"},
         selectedProject
-          ?userRole==="external"
+          ?(userRole==="external"||viewAsExternal)
             ?e(ExternalCheckpointView,{projectId:selectedProject,hideBack:isExtGuest,isExtGuest:isExtGuest,onBack:function(){_selectedProject[1](null);loadProjects()},
               onFeedback:isExtGuest&&_guestInfo[0]?function(){_feedbackProjectId[1](selectedProject);var pr=projects.filter(function(p2){return p2.id===selectedProject})[0];_feedbackProjectName[1](pr?pr.name:"");_showGuestFeedback[1](true)}:null})
-            :e(ProjectDetail,{projectId:selectedProject,admin:canEditProject,userRole:userRole,userName:userName,initialTab:_targetTab[0],onTabChange:function(t){_targetTab[1](t)},onBack:function(){_selectedProject[1](null);_targetTab[1](null);loadProjects()}})
+            :e(ProjectDetail,{projectId:selectedProject,admin:(function(){
+              // GM: edit only if selected project is in their assignedProjects (matches by ID or name)
+              if(userRole==="gm"){
+                var selPr=projects.filter(function(p2){return p2.id===selectedProject})[0];
+                return gmCanEditProject(selPr);
+              }
+              return canEditProject;
+            })(),userRole:userRole,userName:userName,initialTab:_targetTab[0],onTabChange:function(t){_targetTab[1](t)},onBack:function(){_selectedProject[1](null);_targetTab[1](null);loadProjects()}})
+          :viewAsExternal
+            // In preview mode without a selected project: show a simple project list (mimics what external sees)
+            ?e(ProjectList,{projects:projects,admin:false,loading:_loading[0],onSelect:function(id){_selectedProject[1](id)},onRefresh:loadProjects,pageTitle:"My Projects",userName:userName,userRole:"external",tasksByPIC:[],isTemplatesView:false})
           :page==="crm"?e(CRMPage)
           :page==="bd"?e(BDPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userName:userName})
           :page==="analytics"?e(AnalyticsPage,{projects:projects,tasksByPIC:_tasksByPIC[0],onSelect:function(id){_selectedProject[1](id)}})
@@ -7786,7 +8505,7 @@ function App(){
           :page==="announcements"?e(AnnouncementsPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userName:userName})
           :page==="directory"?(userRole==="external"?null:e(EmployeeDirectory))
           :page==="portfolio-log"?e(PortfolioLog)
-          :e(ProjectList,{projects:page==="domestic"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Domestic"}):page==="overseas"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Overseas"}):projects,admin:canCreateProject,loading:_loading[0],onSelect:function(id){_selectedProject[1](id)},onRefresh:loadProjects,pageTitle:page==="domestic"?"Domestic Projects":page==="overseas"?"Overseas Projects":page==="mgmt"?"Management Dashboard":"All Projects",userName:userName,userRole:userRole,tasksByPIC:_tasksByPIC[0]})
+          :e(ProjectList,{projects:page==="domestic"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Domestic"}):page==="overseas"?projects.filter(function(p2){return(p2.classification||"Domestic")==="Overseas"}):page==="templates"?templateProjects:projects,admin:canCreateProject,loading:_loading[0],onSelect:function(id){_selectedProject[1](id)},onRefresh:loadProjects,pageTitle:page==="domestic"?"Domestic Projects":page==="overseas"?"Overseas Projects":page==="templates"?"\uD83D\uDCCB Project Templates":page==="mgmt"?"Management Dashboard":"All Projects",userName:userName,userRole:userRole,tasksByPIC:_tasksByPIC[0],isTemplatesView:page==="templates"})
       )
     ),
     _showUsers[0]&&e(UserManagement,{onClose:function(){_showUsers[1](false)}}),
