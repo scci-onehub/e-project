@@ -196,16 +196,42 @@ input[type="checkbox"]:disabled{cursor:default;opacity:.6}
   .dashboard-main{margin-left:0!important}
   .dashboard-main-body{padding:8px!important}
   /* Cards: keep borders and backgrounds, only remove drop shadow which prints poorly */
-  .card{break-inside:avoid;box-shadow:none!important}
+  .card{
+    page-break-inside:avoid!important;
+    break-inside:avoid!important;
+    box-shadow:none!important;
+  }
+  /* print-block: explicit "do not split" wrapper applied around major sections */
+  .print-block{
+    page-break-inside:avoid!important;
+    break-inside:avoid!important;
+    display:block!important;
+  }
+  /* print-break-before: force a new page before this element */
+  .print-break-before{
+    page-break-before:always!important;
+    break-before:page!important;
+  }
+  /* Headings should not be orphaned */
+  h1,h2,h3,h4{
+    page-break-after:avoid!important;
+    break-after:avoid!important;
+    page-break-inside:avoid!important;
+    break-inside:avoid!important;
+  }
   body{background:#fff!important;font-size:11px!important}
   .overlay{display:none!important}
+  /* Tables: keep rows together, repeat thead on each page */
   table{page-break-inside:auto}
-  tr{page-break-inside:avoid}
+  tr{
+    page-break-inside:avoid!important;
+    break-inside:avoid!important;
+  }
   thead{display:table-header-group}
-  h3{page-break-after:avoid}
+  tfoot{display:table-footer-group}
   @page{margin:12mm 10mm;size:A4 landscape}
   .print-section{page-break-before:auto}
-  svg{max-width:100%!important}
+  svg{max-width:100%!important;page-break-inside:avoid!important;break-inside:avoid!important}
 }
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
@@ -283,6 +309,117 @@ function rc(l){return l==="HIGH"?"#EF4A00":l==="MEDIUM"?"#FF9F29":"#45B369"}
 function rbg(l){return l==="HIGH"?"rgba(239,74,0,.1)":l==="MEDIUM"?"rgba(255,159,41,.08)":"rgba(69,179,105,.06)"}
 function tprog(t){var s=(t.taskStatus||"Not Started").toLowerCase();return s==="done"?100:s==="in progress"?50:0}
 function getCM(){var n=new Date();return n.getMonth()}
+
+// computeProjectVariance — single source of truth for plan/actual/variance numbers.
+// MUST match ProjSCurve's planned/actual calculation exactly so the Overview card,
+// external reports, and the S-Curve all agree. This is the fix for the multi-year
+// variance bug that caused Insite Lab Hilir Migas to show +55% in one place and -4%
+// in another. Returns {plannedPct, actualPct, variance}.
+// NOTE: the management dashboard still reads proj.planPct/proj.actualPct from the backend.
+// That path has its own year-blind calculation and will disagree with this helper until
+// the backend fix is done. Flagged as a known divergence.
+function computeProjectVariance(tasks){
+  if(!tasks||tasks.length===0)return{plannedPct:0,actualPct:0,variance:0};
+  // Compute project span from all task dates
+  var allDates=[];
+  tasks.forEach(function(t){
+    if(t.startDate){var sd=new Date(t.startDate+"T00:00:00");if(!isNaN(sd))allDates.push(sd)}
+    if(t.endDate){var ed=new Date(t.endDate+"T00:00:00");if(!isNaN(ed))allDates.push(ed)}
+    if(t.milestone&&t.milestone.date){var md=new Date(t.milestone.date+"T00:00:00");if(!isNaN(md))allDates.push(md)}
+  });
+  var spanStart,spanEnd;
+  if(allDates.length===0){
+    spanStart=new Date(new Date().getFullYear(),0,1);
+    spanEnd=new Date(new Date().getFullYear(),11,31);
+  }else{
+    spanStart=new Date(Math.min.apply(null,allDates));
+    spanEnd=new Date(Math.max.apply(null,allDates));
+    spanStart=new Date(spanStart.getFullYear(),spanStart.getMonth(),1);
+    spanEnd=new Date(spanEnd.getFullYear(),spanEnd.getMonth()+1,0);
+  }
+  var spanStartYear=spanStart.getFullYear(),spanStartMonth=spanStart.getMonth();
+  var totalMonths=(spanEnd.getFullYear()-spanStartYear)*12+(spanEnd.getMonth()-spanStartMonth)+1;
+  function dateToMonthIdx(d){
+    if(!d||isNaN(d))return null;
+    var monthsFromStart=(d.getFullYear()-spanStartYear)*12+(d.getMonth()-spanStartMonth);
+    var dayOfMonth=d.getDate()-1;
+    var daysInMonth=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+    return monthsFromStart+dayOfMonth/daysInMonth;
+  }
+  function strToMonthIdx(dateStr){
+    if(!dateStr)return null;
+    var d=new Date(dateStr+"T00:00:00");
+    return isNaN(d)?null:dateToMonthIdx(d);
+  }
+  var today=new Date();
+  var todayInSpan=(today>=spanStart&&today<=spanEnd);
+  var todayMonthIdx=todayInSpan?dateToMonthIdx(today):null;
+  var todayIntMonth=todayMonthIdx!==null?Math.floor(todayMonthIdx):totalMonths-1;
+
+  // Planned curve — match ProjSCurve exactly
+  var tw=tasks.length;
+  var monthlyPlanned=[];for(var m0=0;m0<totalMonths;m0++)monthlyPlanned[m0]=0;
+  tasks.forEach(function(t){
+    var w=100/tw;
+    var planEndIdx=null;
+    if(t.milestone&&t.milestone.date)planEndIdx=strToMonthIdx(t.milestone.date);
+    if(planEndIdx===null&&t.endDate)planEndIdx=strToMonthIdx(t.endDate);
+    if(planEndIdx===null)return;
+    var planStartIdx=t.startDate?strToMonthIdx(t.startDate):null;
+    if(planStartIdx===null)planStartIdx=Math.max(0,planEndIdx-1);
+    var sm=Math.max(0,Math.floor(planStartIdx));
+    var em=Math.min(totalMonths-1,Math.floor(planEndIdx));
+    if(em<sm)em=sm;
+    var dur=em-sm+1;
+    var perMonth=w/dur;
+    for(var m1=sm;m1<=em;m1++)monthlyPlanned[m1]+=perMonth;
+  });
+  var planned=[];var cumP=0;
+  for(var m2=0;m2<totalMonths;m2++){cumP+=monthlyPlanned[m2];planned.push(Math.min(cumP,100))}
+
+  // Actual curve — match ProjSCurve exactly
+  var monthlyActual=[];for(var m3=0;m3<totalMonths;m3++)monthlyActual[m3]=0;
+  tasks.forEach(function(t){
+    var w=100/tw;
+    var actEndIdx=t.endDate?strToMonthIdx(t.endDate):null;
+    if(actEndIdx===null&&t.milestone&&t.milestone.date)actEndIdx=strToMonthIdx(t.milestone.date);
+    if(actEndIdx===null)return;
+    var actStartIdx=t.startDate?strToMonthIdx(t.startDate):null;
+    if(actStartIdx===null)actStartIdx=Math.max(0,actEndIdx-1);
+    var status=(t.taskStatus||"").toLowerCase();
+    if(status==="done"){
+      var sm=Math.max(0,Math.floor(actStartIdx));
+      var em=Math.min(totalMonths-1,Math.floor(actEndIdx));
+      if(todayMonthIdx!==null)em=Math.min(em,Math.floor(todayMonthIdx));
+      if(em<sm)em=sm;
+      var dur=Math.max(em-sm+1,1);
+      var perMonth=w/dur;
+      for(var m4=sm;m4<=em;m4++)monthlyActual[m4]+=perMonth;
+    }else if(status==="in progress"){
+      if(todayMonthIdx===null)return;
+      var ipStart=Math.max(0,Math.floor(actStartIdx));
+      var ipEnd=Math.min(totalMonths-1,Math.floor(todayMonthIdx));
+      if(ipEnd<ipStart)return;
+      var durIP=Math.max(ipEnd-ipStart+1,1);
+      var perMonthIP=w*0.5/durIP;
+      for(var m4b=ipStart;m4b<=ipEnd;m4b++)monthlyActual[m4b]+=perMonthIP;
+    }
+  });
+  var actual=[];var cumA=0;
+  for(var m5=0;m5<totalMonths;m5++){
+    cumA+=monthlyActual[m5];
+    if(todayInSpan&&m5>todayIntMonth){actual.push(null)}
+    else{actual.push(Math.min(cumA,100))}
+  }
+
+  // Take value at today (or project end if outside span)
+  var refIdx=todayInSpan?todayIntMonth:totalMonths-1;
+  var plannedPct=Math.round((planned[refIdx]||0)*10)/10;
+  var actNowRaw=actual[refIdx]!==null?actual[refIdx]:(actual.filter(function(v){return v!==null}).pop()||0);
+  var actualPct=Math.round(actNowRaw*10)/10;
+  var variance=Math.round((actualPct-plannedPct)*10)/10;
+  return{plannedPct:plannedPct,actualPct:actualPct,variance:variance};
+}
 // compRS — Risk Score computation (Option C: impact × likelihood, normalized to 25)
 // For each OPEN risk, score = impact × likelihood (1-25 scale).
 // Aggregate = average score across all open risks.
@@ -1639,7 +1776,8 @@ function ExternalCheckpointView(p){
   var kendala=data.kendala||[],tindakLanjut=data.tindakLanjut||[];
   var totalTasks=tasks.length,doneTasks=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
   var overall=totalTasks>0?Math.round(doneTasks/totalTasks*100):0;
-  var variance=(Number(proj.actualPct)||0)-(proj.planPct||0);
+  // Use shared variance helper — matches S-Curve exactly
+  var variance=computeProjectVariance(tasks).variance;
   var openRisks=risks.filter(function(r){return r.status==="Open"});
   var latestReport=weeklyReps.length>0?weeklyReps[0]:null;
   var prevReport=weeklyReps.length>1?weeklyReps[1]:null;
@@ -1804,7 +1942,7 @@ function ExternalCheckpointView(p){
           :e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport&&latestReport.nextWeek?latestReport.nextWeek:"No follow-up actions."))),
 
     // Row 4: Milestone Table
-    e("div",{className:"card",style:{marginBottom:16,overflow:"hidden"}},
+    e("div",{className:"card print-block",style:{marginBottom:16,overflow:"hidden"}},
       e("div",{style:{padding:"16px 20px",borderBottom:"1px solid var(--border)"}},
         e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)"}},"Project Milestones")),
       e("div",{style:{overflowX:"auto"}},
@@ -1821,25 +1959,25 @@ function ExternalCheckpointView(p){
               e("td",{style:{fontSize:13,color:"var(--text-tertiary)"}},m.status==="Done"?"Completed":m.inProgress>0?m.done+"/"+m.total+" done, "+m.inProgress+" in progress":m.done>0?m.done+"/"+m.total+" done":"\u2014"))}))))),
 
     // Row 5: Project Roadmap (Gantt)
-    e("div",{style:{marginBottom:16}},
+    e("div",{className:"print-block",style:{marginBottom:16}},
       e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Project Roadmap"),
       e(ProjGantt,{tasks:tasks,collapsed:true})),
 
     // Row 6: S-Curve
-    e("div",{style:{marginBottom:16}},
+    e("div",{className:"print-block",style:{marginBottom:16}},
       e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"S-Curve Project Progress"),
       e(ProjSCurve,{tasks:tasks,metrics:{overall:overall,ct:doneTasks,tt:totalTasks,ds:doneTasks,ts:totalTasks,variance:variance},proj:proj})),
 
     // Row 7: 5M Fish Diagram
-    project5M&&e("div",{style:{marginBottom:16}},e(FishDiagram5M,{data:project5M,projectName:proj.name,objective:proj.objective})),
+    project5M&&e("div",{className:"print-block",style:{marginBottom:16}},e(FishDiagram5M,{data:project5M,projectName:proj.name,objective:proj.objective})),
 
     // Row 8: Risk Heat Map
-    openRisks.length>0&&e("div",{className:"card",style:{padding:"20px 24px",marginBottom:16}},
+    openRisks.length>0&&e("div",{className:"card print-block",style:{padding:"20px 24px",marginBottom:16}},
       e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Risk Heat Map"),
       e(HeatMap5x5,{risks:risks})),
 
     // Row 9: Risk Register (read-only list of all risks)
-    risks.length>0&&e("div",{className:"card",style:{padding:"20px 24px",marginBottom:16}},
+    risks.length>0&&e("div",{className:"card print-block",style:{padding:"20px 24px",marginBottom:16}},
       e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Risk Register ("+risks.length+")"),
       e("div",{style:{display:"flex",flexDirection:"column",gap:12}},
         risks.map(function(r,i){
@@ -1954,7 +2092,7 @@ function ProjectDetail(p){
   var overall=totalSubs>0?doneSubs/totalSubs*100:0;
   var completedTasks=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
   var rs=compRS(risks),rl=getRL(rs.pct);
-  var variance=(Number(proj.actualPct)||0)-(proj.planPct||0);
+  var variance=computeProjectVariance(tasks).variance;
   var metrics={overall:overall,ct:completedTasks,tt:tasks.length,ds:doneSubs,ts:totalSubs,variance:variance};
 
   // ─── Actions ───
@@ -2272,7 +2410,9 @@ function HeatMap5x5(p){
 }
 function ProjOverview(p){var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics,rl=p.rl,rs=p.rs,bi=p.budgetItems||[],br=p.budgetReals||[],reg=p.regItems||[],crmDeals=p.crmDeals||[],crmClients=p.crmClients||[],project5M=p.project5M,projectId=p.projectId,admin=p.admin,reload=p.reload;var mob=useMobile();
   var _taskFilter=useState("All");
-  var plannedPct=(proj.planPct||0),actualPct=Number(proj.actualPct)||0,variance=actualPct-plannedPct;
+  // Use shared variance helper — matches S-Curve exactly, fixes multi-year bug
+  var _pv=computeProjectVariance(tasks);
+  var plannedPct=_pv.plannedPct,actualPct=_pv.actualPct,variance=_pv.variance;
   var totalBudget=bi.reduce(function(a,b){return a+(Number(b.total)||0)},0),totalReal=br.reduce(function(a,b){return a+(Number(b.total)||0)},0);
   var budgetUtil=totalBudget>0?Math.round(totalReal/totalBudget*100):0;
   var openIssues=reg.filter(function(r){return r.status==="Open"}).length,closedIssues=reg.filter(function(r){return r.status==="Closed"}).length,pendingIssues=reg.filter(function(r){return r.status==="Pending"||r.status==="Awaiting Approval"}).length;
@@ -2985,101 +3125,229 @@ function ProjMilestones(p){var tasks=p.tasks,admin=p.admin,today=new Date();
 }
 
 function ProjSCurve(p){var tasks=p.tasks,met=p.metrics,proj=p.proj||{};var _h=useState(null),hover=_h[0];
-  var cm=getCM(),W=760,H=380,pL=55,pR=30,pT=30,pB=50,cW=W-pL-pR,cH=H-pT-pB;
-  function x(i){return pL+i/11*cW}function y(v){return pT+cH-v/100*cH}
-
-  // ── Compute Planned S-Curve ──
-  // PLANNED always uses MILESTONE TARGET DATE for end month (the original plan)
-  // This ensures planned curve reflects the baseline schedule, not actual completion
-  var tw=tasks.length||1;
-  var monthlyPlanned=[];for(var m0=0;m0<12;m0++)monthlyPlanned[m0]=0;
+  var _scrollRef=useRef(null);
+  var _autoScrolled=useState(false);
+  // ── Continuous scrollable timeline (matches ProjGantt pattern) ──
+  var PX_PER_MONTH=80;
+  // Compute project span from all task dates
+  var allDates=[];
   tasks.forEach(function(t){
-    var w=100/tw; // equal weight per task
-    var sm=0,planEnd=11;
-    if(t.startDate){var sd1=new Date(t.startDate+"T00:00:00");if(!isNaN(sd1))sm=sd1.getMonth()}else sm=Number(t.startMonth)||0;
-    // For planned: ALWAYS use milestone date as the target end
-    if(t.milestone&&t.milestone.date){var md1=new Date(t.milestone.date+"T00:00:00");if(!isNaN(md1))planEnd=md1.getMonth()}
-    else if(t.endDate){var ed1=new Date(t.endDate+"T00:00:00");if(!isNaN(ed1))planEnd=ed1.getMonth()}
-    if(isNaN(planEnd)||planEnd<sm)planEnd=Math.min(sm+2,11);
-    var dur=planEnd-sm+1;
-    var perMonth=w/dur;
-    for(var m1=sm;m1<=planEnd;m1++)monthlyPlanned[m1]+=perMonth;
+    if(t.startDate){var sd=new Date(t.startDate+"T00:00:00");if(!isNaN(sd))allDates.push(sd)}
+    if(t.endDate){var ed=new Date(t.endDate+"T00:00:00");if(!isNaN(ed))allDates.push(ed)}
+    if(t.milestone&&t.milestone.date){var md=new Date(t.milestone.date+"T00:00:00");if(!isNaN(md))allDates.push(md)}
   });
-  var planned=[];var cumP=0;
-  for(var m2=0;m2<12;m2++){cumP+=monthlyPlanned[m2];planned.push(Math.round(Math.min(cumP,100)*10)/10)}
+  var spanStart,spanEnd;
+  if(allDates.length===0){
+    spanStart=new Date(new Date().getFullYear(),0,1);
+    spanEnd=new Date(new Date().getFullYear(),11,31);
+  }else{
+    spanStart=new Date(Math.min.apply(null,allDates));
+    spanEnd=new Date(Math.max.apply(null,allDates));
+    // Round to whole-month boundaries: start of earliest month, end of latest month
+    spanStart=new Date(spanStart.getFullYear(),spanStart.getMonth(),1);
+    spanEnd=new Date(spanEnd.getFullYear(),spanEnd.getMonth()+1,0);
+  }
+  var spanStartYear=spanStart.getFullYear(),spanStartMonth=spanStart.getMonth();
+  var totalMonths=(spanEnd.getFullYear()-spanStartYear)*12+(spanEnd.getMonth()-spanStartMonth)+1;
 
-  // ── Compute Actual S-Curve ──
-  // ACTUAL uses TASK endDate (reflects when work actually happened/completed)
-  // Done tasks: full weight credited by min(taskEndMonth, currentMonth)
-  // In Progress: 50% weight from start to current month
-  // Not Started: 0
-  var monthlyActual=[];for(var m3=0;m3<12;m3++)monthlyActual[m3]=0;
+  // Helper: convert a date to a fractional month index from spanStart
+  function dateToMonthIdx(d){
+    if(!d||isNaN(d))return null;
+    var monthsFromStart=(d.getFullYear()-spanStartYear)*12+(d.getMonth()-spanStartMonth);
+    var dayOfMonth=d.getDate()-1;
+    var daysInMonth=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+    return monthsFromStart+dayOfMonth/daysInMonth;
+  }
+  function strToMonthIdx(dateStr){
+    if(!dateStr)return null;
+    var d=new Date(dateStr+"T00:00:00");
+    return isNaN(d)?null:dateToMonthIdx(d);
+  }
+  // Today position
+  var today=new Date();
+  var todayInSpan=(today>=spanStart&&today<=spanEnd);
+  var todayMonthIdx=todayInSpan?dateToMonthIdx(today):null;
+
+  // Chart dimensions: SVG width scales with the timeline; height stays fixed
+  // Chart dimensions: shorter H and tighter top padding to reduce whitespace above the curve
+  var H=320,pL=55,pR=30,pT=20,pB=50,cH=H-pT-pB;
+  var chartWidth=totalMonths*PX_PER_MONTH;
+  var W=pL+chartWidth+pR;
+  var cW=chartWidth;
+  // Convert month index to x pixel; value (0-100) to y pixel
+  function x(monthIdx){return pL+(monthIdx/(totalMonths-1||1))*cW}
+  function xMonth(monthIdx){return pL+monthIdx*PX_PER_MONTH} // left edge of month column (for proportional positioning like today line)
+  function xDot(monthIdx){return pL+monthIdx*PX_PER_MONTH+PX_PER_MONTH/2} // center of month column (for dots, paths, labels — aligns with month label positions)
+  function y(v){return pT+cH-v/100*cH}
+
+  // ── Compute Planned S-Curve (continuous, month-by-month over the full span) ──
+  // Each task contributes equal weight (100/totalTasks) distributed evenly across the months
+  // from its planned start to its planned end (milestone date or task end date)
+  var tw=tasks.length||1;
+  var monthlyPlanned=[];for(var m0=0;m0<totalMonths;m0++)monthlyPlanned[m0]=0;
   tasks.forEach(function(t){
     var w=100/tw;
-    var sm=0,actEnd=11;
-    if(t.startDate){var sd3=new Date(t.startDate+"T00:00:00");if(!isNaN(sd3))sm=sd3.getMonth()}
-    // For actual: use task endDate (actual completion date)
-    if(t.endDate){var ed3=new Date(t.endDate+"T00:00:00");if(!isNaN(ed3))actEnd=ed3.getMonth()}
-    else if(t.milestone&&t.milestone.date){var md3=new Date(t.milestone.date+"T00:00:00");if(!isNaN(md3))actEnd=md3.getMonth()}
-    if(isNaN(actEnd)||actEnd<sm)actEnd=Math.min(sm+2,11);
+    // Plan end: prefer milestone date, fallback to task end date
+    var planEndIdx=null;
+    if(t.milestone&&t.milestone.date)planEndIdx=strToMonthIdx(t.milestone.date);
+    if(planEndIdx===null&&t.endDate)planEndIdx=strToMonthIdx(t.endDate);
+    if(planEndIdx===null)return; // no end date at all → skip from planned curve
+    var planStartIdx=t.startDate?strToMonthIdx(t.startDate):null;
+    if(planStartIdx===null)planStartIdx=Math.max(0,planEndIdx-1); // 1-month default
+    // Convert fractional indices to integer months for distribution
+    var sm=Math.max(0,Math.floor(planStartIdx));
+    var em=Math.min(totalMonths-1,Math.floor(planEndIdx));
+    if(em<sm)em=sm;
+    var dur=em-sm+1;
+    var perMonth=w/dur;
+    for(var m1=sm;m1<=em;m1++)monthlyPlanned[m1]+=perMonth;
+  });
+  var planned=[];var cumP=0;
+  for(var m2=0;m2<totalMonths;m2++){cumP+=monthlyPlanned[m2];planned.push(Math.round(Math.min(cumP,100)*10)/10)}
 
+  // ── Compute Actual S-Curve (continuous) ──
+  var monthlyActual=[];for(var m3=0;m3<totalMonths;m3++)monthlyActual[m3]=0;
+  tasks.forEach(function(t){
+    var w=100/tw;
+    var actEndIdx=t.endDate?strToMonthIdx(t.endDate):null;
+    if(actEndIdx===null&&t.milestone&&t.milestone.date)actEndIdx=strToMonthIdx(t.milestone.date);
+    if(actEndIdx===null)return;
+    var actStartIdx=t.startDate?strToMonthIdx(t.startDate):null;
+    if(actStartIdx===null)actStartIdx=Math.max(0,actEndIdx-1);
     var status=(t.taskStatus||"").toLowerCase();
     if(status==="done"){
-      // Done: full weight credited by current month, even if task starts later
-      var creditStart=Math.min(sm,cm);
-      var creditEnd=Math.min(actEnd,cm);
-      var dur=Math.max(creditEnd-creditStart+1,1);
+      // Done: full credit, capped at today if today is in span
+      var sm=Math.max(0,Math.floor(actStartIdx));
+      var em=Math.min(totalMonths-1,Math.floor(actEndIdx));
+      if(todayMonthIdx!==null)em=Math.min(em,Math.floor(todayMonthIdx));
+      if(em<sm)em=sm;
+      var dur=Math.max(em-sm+1,1);
       var perMonth=w/dur;
-      for(var m4=creditStart;m4<=creditEnd;m4++)monthlyActual[m4]+=perMonth;
-    } else if(status==="in progress"){
-      // In Progress: 50% weight from start (or earlier) to current month
-      var ipStart=Math.min(sm,cm);
-      var durIP=Math.max(cm-ipStart+1,1);
+      for(var m4=sm;m4<=em;m4++)monthlyActual[m4]+=perMonth;
+    }else if(status==="in progress"){
+      // In Progress: 50% partial credit from start to today (only if today is in span)
+      if(todayMonthIdx===null)return;
+      var ipStart=Math.max(0,Math.floor(actStartIdx));
+      var ipEnd=Math.min(totalMonths-1,Math.floor(todayMonthIdx));
+      if(ipEnd<ipStart)return;
+      var durIP=Math.max(ipEnd-ipStart+1,1);
       var perMonthIP=w*0.5/durIP;
-      for(var m4b=ipStart;m4b<=cm;m4b++)monthlyActual[m4b]+=perMonthIP;
+      for(var m4b=ipStart;m4b<=ipEnd;m4b++)monthlyActual[m4b]+=perMonthIP;
     }
-    // Not Started: 0 contribution
   });
-  // Cumulate actual (only up to current month)
+  // Cumulate actual; only show months up to and including current month
   var actual=[];var cumA=0;
-  for(var m5=0;m5<12;m5++){
-    if(m5<=cm){cumA+=monthlyActual[m5];actual.push(Math.round(Math.min(cumA,100)*10)/10)}
-    else{actual.push(null)}
+  var todayIntMonth=todayMonthIdx!==null?Math.floor(todayMonthIdx):totalMonths-1;
+  for(var m5=0;m5<totalMonths;m5++){
+    cumA+=monthlyActual[m5];
+    if(todayInSpan&&m5>todayIntMonth){actual.push(null)}
+    else{actual.push(Math.round(Math.min(cumA,100)*10)/10)}
   }
 
-  var pp=planned.map(function(v,i){return(i?"L":"M")+x(i).toFixed(1)+","+y(v).toFixed(1)}).join(" ");
-  // Variance at current month — use backend values for consistency with dashboard
-  var planNow=proj.planPct||planned[cm]||0,actNow=Number(proj.actualPct)||actual[cm]||0;
-  // Override actual curve endpoint at current month to match dashboard
-  if(actual[cm]!==null)actual[cm]=actNow;
+  // ── Shrink the chart span to the effective end of meaningful data ──
+  // If the raw span (earliest task date → latest task date) extends past where the planned curve
+  // and actual curve actually grow, trailing months appear empty on the x-axis. Shrink the chart
+  // so the last visible month is the later of:
+  //   - where planned work finishes (curve reaches 100% or stops growing)
+  //   - where actual work was last recorded (last non-null actual value with growth)
+  //   - today (so the user sees "now" on the chart even if no work is recorded yet)
+  // This is the fix for "December feels empty" on single-year projects whose work ends in November.
+  var plannedLastMeaningful=0;
+  for(var pi=0;pi<planned.length;pi++){if(planned[pi]>=99.9){plannedLastMeaningful=pi;break}}
+  if(plannedLastMeaningful===0){
+    for(var pk=planned.length-1;pk>0;pk--){
+      if(planned[pk]>planned[pk-1]+0.01){plannedLastMeaningful=pk;break}
+    }
+  }
+  var actualLastMeaningful=0;
+  for(var am=actual.length-1;am>=0;am--){
+    if(actual[am]!==null&&actual[am]>0.01){actualLastMeaningful=am;break}
+  }
+  var todayIdx=todayInSpan?Math.min(todayIntMonth,totalMonths-1):-1;
+  var effectiveLastIdx=Math.max(plannedLastMeaningful,actualLastMeaningful,todayIdx);
+  // Safety floor: always show at least 3 months
+  if(effectiveLastIdx<2)effectiveLastIdx=Math.min(2,totalMonths-1);
+  if(effectiveLastIdx<totalMonths-1){
+    totalMonths=effectiveLastIdx+1;
+    planned=planned.slice(0,totalMonths);
+    actual=actual.slice(0,totalMonths);
+    chartWidth=totalMonths*PX_PER_MONTH;
+    W=pL+chartWidth+pR;
+    cW=chartWidth;
+    // Update spanEnd to reflect the truncated range (used by tooltips and "today in span" checks)
+    spanEnd=new Date(spanStartYear,spanStartMonth+totalMonths,0);
+  }
+
+  // Variance at today (or project end if today outside span) — uses shrunk totalMonths
+  // IMPORTANT: use chart-computed values only. The backend proj.planPct/actualPct path is being
+  // replaced to match (separate backend fix). Chart is source of truth.
+  var refIdx=todayInSpan?Math.min(todayIntMonth,totalMonths-1):totalMonths-1;
+  var planNow=planned[refIdx]||0;
+  var actNow=actual[refIdx]!==null?actual[refIdx]:(actual.filter(function(v){return v!==null}).pop()||0);
   var variance2=Math.round((actNow-planNow)*10)/10;
+
+  // Build SVG path strings using xDot (center-of-month) so dots align with month labels
+  var pp=planned.map(function(v,i){return(i?"L":"M")+xDot(i).toFixed(1)+","+y(v).toFixed(1)}).join(" ");
   var ap2=[];actual.forEach(function(v,i){if(v!==null)ap2.push({i:i,v:v})});
-  var aP=ap2.map(function(p2,i){return(i?"L":"M")+x(p2.i).toFixed(1)+","+y(p2.v).toFixed(1)}).join(" ");
-  // Count tasks by status for contextual narrative
+  var aP=ap2.map(function(p2,i){return(i?"L":"M")+xDot(p2.i).toFixed(1)+","+y(p2.v).toFixed(1)}).join(" ");
+
+  // Count tasks by status for narrative
   var doneCnt=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
   var ipCnt=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="in progress"}).length;
   var nsCnt=tasks.filter(function(t){var s=(t.taskStatus||"").toLowerCase();return s!=="done"&&s!=="in progress"}).length;
-  // Build contextual summary message based on variance and task mix
   var narrative,narrativeColor,narrativeBg,narrativeIcon;
   if(variance2>=10){
     narrative="Project is significantly ahead of schedule. Completed work substantially exceeds the baseline plan. Maintain current pace and verify quality.";
-    narrativeColor="#15803D";narrativeBg="rgba(34,197,94,.1)";narrativeIcon="\uD83D\uDE80"; // rocket
+    narrativeColor="#15803D";narrativeBg="rgba(34,197,94,.1)";narrativeIcon="\uD83D\uDE80";
   }else if(variance2>=3){
     narrative="Project is ahead of schedule. Completed deliverables exceed the baseline plan. Continue current pace.";
-    narrativeColor="#15803D";narrativeBg="rgba(34,197,94,.08)";narrativeIcon="\u2705"; // check
+    narrativeColor="#15803D";narrativeBg="rgba(34,197,94,.08)";narrativeIcon="\u2705";
   }else if(variance2>=-3){
     narrative="Project is on track. Actual completion aligns with the baseline plan within an acceptable margin.";
-    narrativeColor="#1D4ED8";narrativeBg="rgba(59,130,246,.08)";narrativeIcon="\uD83D\uDFE2"; // green circle
+    narrativeColor="#1D4ED8";narrativeBg="rgba(59,130,246,.08)";narrativeIcon="\uD83D\uDFE2";
   }else if(variance2>=-10){
     narrative="Project is slightly behind plan. "+(ipCnt>0?ipCnt+" task"+(ipCnt!==1?"s are":" is")+" currently in progress but ha"+(ipCnt!==1?"ve":"s")+" not yet completed enough to close the gap. ":"")+"Watch closely over the next reporting cycle.";
-    narrativeColor="#B45309";narrativeBg="rgba(255,159,41,.1)";narrativeIcon="\u26A0\uFE0F"; // warning
+    narrativeColor="#B45309";narrativeBg="rgba(255,159,41,.1)";narrativeIcon="\u26A0\uFE0F";
   }else{
     narrative="Project is behind schedule. Completed work is significantly below the baseline plan. "+(ipCnt>0?ipCnt+" in-progress task"+(ipCnt!==1?"s":"")+" need"+(ipCnt!==1?"":"s")+" to complete soon to recover. ":"")+"Consider escalation or schedule adjustment.";
-    narrativeColor="#B91C1C";narrativeBg="rgba(239,74,0,.1)";narrativeIcon="\uD83D\uDD34"; // red circle
+    narrativeColor="#B91C1C";narrativeBg="rgba(239,74,0,.1)";narrativeIcon="\uD83D\uDD34";
   }
-  function mm(ev){var r=ev.currentTarget.getBoundingClientRect();var idx=Math.round(((ev.clientX-r.left)/r.width*W-pL)/cW*11);_h[1](Math.max(0,Math.min(11,idx)))}
-  return e("div",{style:{animation:"fadeIn .3s"}},e("h2",{style:{fontSize:20,fontWeight:700,marginBottom:4}},"S-Curve"),e("p",{style:{fontSize:13,color:"var(--text-secondary)",marginBottom:20}},"Planned vs Actual cumulative progress based on task weights and schedules."),
-    // Contextual narrative — explains what the variance means in plain language
+
+  // Build month labels with year info
+  var MONTH_LABELS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var monthLabels=[];
+  for(var i=0;i<totalMonths;i++){
+    var d=new Date(spanStartYear,spanStartMonth+i,1);
+    monthLabels.push({label:MONTH_LABELS[d.getMonth()],year:d.getFullYear(),month:d.getMonth(),isFirstOfYear:d.getMonth()===0||i===0});
+  }
+  var todayPxOffset=todayMonthIdx!==null?xMonth(todayMonthIdx):null;
+
+  // Hover handler: convert mouse position to month index
+  // Use Math.floor so "which column is the mouse in?" works correctly — the column
+  // containing x is at index floor((x - pL) / PX_PER_MONTH). Dots are now at column centers
+  // so Math.round would snap wrong at column boundaries.
+  function mm(ev){
+    var svg=ev.currentTarget;
+    var pt=svg.createSVGPoint();
+    pt.x=ev.clientX;pt.y=ev.clientY;
+    var ctm=svg.getScreenCTM();
+    if(!ctm)return;
+    var loc=pt.matrixTransform(ctm.inverse());
+    var monthIdx=Math.floor((loc.x-pL)/PX_PER_MONTH);
+    _h[1](Math.max(0,Math.min(totalMonths-1,monthIdx)));
+  }
+  // Auto-scroll to today on first render
+  useEffect(function(){
+    if(_autoScrolled[0]||!_scrollRef.current||todayPxOffset===null)return;
+    var container=_scrollRef.current;
+    var visibleWidth=container.clientWidth;
+    var targetScroll=Math.max(0,todayPxOffset-visibleWidth/2);
+    container.scrollLeft=targetScroll;
+    _autoScrolled[1](true);
+  },[totalMonths,todayPxOffset]);
+
+  return e("div",{style:{animation:"fadeIn .3s"}},e("h2",{style:{fontSize:20,fontWeight:700,marginBottom:4}},"S-Curve"),e("p",{style:{fontSize:13,color:"var(--text-secondary)",marginBottom:20}},"Planned vs Actual cumulative progress across the full project lifespan."),
+    // Contextual narrative
     e("div",{style:{background:narrativeBg,borderLeft:"4px solid "+narrativeColor,borderRadius:8,padding:"14px 18px",marginBottom:16,display:"flex",gap:12,alignItems:"flex-start"}},
       e("div",{style:{fontSize:20,flexShrink:0,lineHeight:1}},narrativeIcon),
       e("div",{style:{flex:1}},
@@ -3087,38 +3355,140 @@ function ProjSCurve(p){var tasks=p.tasks,met=p.metrics,proj=p.proj||{};var _h=us
         e("div",{style:{fontSize:13,color:"var(--text-primary)",lineHeight:1.55}},narrative),
         e("div",{style:{fontSize:11,color:"var(--text-tertiary)",marginTop:6}},
           doneCnt+" done \u00B7 "+ipCnt+" in progress \u00B7 "+nsCnt+" not started"))),
-    // Legend + Summary
-    e("div",{style:{display:"flex",gap:24,marginBottom:16,flexWrap:"wrap",alignItems:"center"}},
-      e("div",{style:{display:"flex",alignItems:"center",gap:8}},e("div",{style:{width:24,height:3,background:"#487FFF",borderRadius:2}}),e("span",{style:{fontSize:12,color:"var(--text-secondary)"}},"Planned")),
-      e("div",{style:{display:"flex",alignItems:"center",gap:8}},e("div",{style:{width:24,height:3,background:"#FF9F29",borderRadius:2}}),e("span",{style:{fontSize:12,color:"var(--text-secondary)"}},"Actual")),
-      e("div",{style:{fontSize:12,fontWeight:600,color:"var(--text-secondary)"}},"Today: Plan "+planNow+"% | Actual "+actNow+"%"),
-      e("div",{style:{fontSize:12,fontWeight:700,fontFamily:mono,padding:"2px 10px",borderRadius:4,background:variance2>=0?"rgba(69,179,105,.15)":"rgba(239,74,0,.1)",color:variance2>=0?"#45B369":"#EF4A00"}},(variance2>=0?"+":"")+variance2+"% variance")
+    // Legend + jump-to-today + summary
+    e("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:12,flexWrap:"wrap"}},
+      e("div",{style:{display:"flex",alignItems:"center",gap:8}},
+        todayInSpan&&e("button",{
+          onClick:function(){
+            if(_scrollRef.current&&todayPxOffset!==null){
+              var container=_scrollRef.current;
+              var visibleWidth=container.clientWidth;
+              container.scrollTo({left:Math.max(0,todayPxOffset-visibleWidth/2),behavior:"smooth"});
+            }
+          },
+          style:{padding:"4px 12px",fontSize:11,fontWeight:600,background:"#487FFF",color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}
+        },"\u2190 Jump to Today")
+      ),
+      e("div",{style:{display:"flex",gap:24,flexWrap:"wrap",alignItems:"center"}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:8}},e("div",{style:{width:24,height:3,background:"#487FFF",borderRadius:2}}),e("span",{style:{fontSize:12,color:"var(--text-secondary)"}},"Planned")),
+        e("div",{style:{display:"flex",alignItems:"center",gap:8}},e("div",{style:{width:24,height:3,background:"#FF9F29",borderRadius:2}}),e("span",{style:{fontSize:12,color:"var(--text-secondary)"}},"Actual")),
+        e("div",{style:{fontSize:12,fontWeight:600,color:"var(--text-secondary)"}},(todayInSpan?"Today":"Project end")+": Plan "+planNow+"% | Actual "+actNow+"%"),
+        e("div",{style:{fontSize:12,fontWeight:700,fontFamily:mono,padding:"2px 10px",borderRadius:4,background:variance2>=0?"rgba(69,179,105,.15)":"rgba(239,74,0,.1)",color:variance2>=0?"#45B369":"#EF4A00"}},(variance2>=0?"+":"")+variance2+"% variance")
+      )
     ),
-    e("div",{className:"card",style:{padding:"20px 16px"}},e("svg",{viewBox:"0 0 "+W+" "+H,style:{width:"100%",height:"auto"},onMouseMove:mm,onMouseLeave:function(){_h[1](null)}},
-      [0,25,50,75,100].map(function(v){return e("g",{key:v},e("line",{x1:pL,y1:y(v),x2:W-pR,y2:y(v),stroke:"var(--border)",strokeWidth:1,strokeDasharray:v?"4,4":""}),e("text",{x:pL-10,y:y(v)+4,textAnchor:"end",fill:"#9CA3AF",fontSize:11,fontFamily:mono},v+"%"))}),
-      MO.map(function(m,i){return e("text",{key:i,x:x(i),y:H-10,textAnchor:"middle",fill:i<=cm?"#4B5563":"#D1D5DB",fontSize:11,fontWeight:i===cm?700:400},m)}),
-      // Planned area fill
-      e("path",{d:pp+" L"+x(11)+","+y(0)+" L"+x(0)+","+y(0)+" Z",fill:"#487FFF",opacity:.06}),
-      e("path",{d:pp,fill:"none",stroke:"#487FFF",strokeWidth:2.5,strokeLinecap:"round"}),
-      planned.map(function(v,i){return e("circle",{key:"p"+i,cx:x(i),cy:y(v),r:3,fill:"#fff",stroke:"#487FFF",strokeWidth:2})}),
-      // Actual area fill
-      ap2.length>1&&e("path",{d:aP+" L"+x(ap2[ap2.length-1].i)+","+y(0)+" L"+x(0)+","+y(0)+" Z",fill:"#FF9F29",opacity:.08}),
-      ap2.length>1&&e("path",{d:aP,fill:"none",stroke:"#FF9F29",strokeWidth:2.5,strokeLinecap:"round"}),
-      ap2.map(function(p2){return e("circle",{key:"a"+p2.i,cx:x(p2.i),cy:y(p2.v),r:3,fill:"#fff",stroke:"#FF9F29",strokeWidth:2})}),
-      // Today line
-      e("line",{x1:x(cm),y1:pT,x2:x(cm),y2:pT+cH,stroke:"#9CA3AF",strokeWidth:1,strokeDasharray:"6,4"}),
-      e("text",{x:x(cm),y:pT-6,textAnchor:"middle",fill:"#9CA3AF",fontSize:9},"Today"),
-      // Hover tooltip
-      hover!==null&&e("g",null,e("line",{x1:x(hover),y1:pT,x2:x(hover),y2:pT+cH,stroke:"#4B5563",strokeWidth:1,opacity:.3}),e("circle",{cx:x(hover),cy:y(planned[hover]),r:5,fill:"#487FFF",stroke:"#fff",strokeWidth:2}),actual[hover]!==null&&e("circle",{cx:x(hover),cy:y(actual[hover]),r:5,fill:"#FF9F29",stroke:"#fff",strokeWidth:2}))
-    ),hover!==null&&e("div",{style:{display:"flex",justifyContent:"center",marginTop:12,gap:20,fontSize:13}},e("span",{style:{color:"var(--text-secondary)"}},MO[hover]),e("span",{style:{fontWeight:600,color:"#487FFF"}},"Plan: "+planned[hover]+"%"),actual[hover]!==null&&e("span",{style:{fontWeight:600,color:"#FF9F29"}},"Actual: "+actual[hover]+"%"))),
-    // Methodology footnote — explains the formula so BOD knows what they're looking at
+    // Scrollable chart container
+    e("div",{className:"card",style:{padding:"20px 16px",overflow:"hidden"}},
+      e("div",{ref:_scrollRef,style:{overflowX:"auto",overflowY:"hidden"}},
+        e("svg",{
+          width:W,height:H,viewBox:"0 0 "+W+" "+H,
+          preserveAspectRatio:"xMidYMid meet",
+          style:{display:"block",width:"100%",height:"auto",minWidth:W>1200?W+"px":"auto"},
+          onMouseMove:mm,onMouseLeave:function(){_h[1](null)}},
+          // Horizontal grid lines
+          [0,25,50,75,100].map(function(v){return e("g",{key:v},
+            e("line",{x1:pL,y1:y(v),x2:W-pR,y2:y(v),stroke:"var(--border)",strokeWidth:1,strokeDasharray:v?"4,4":""}),
+            e("text",{x:pL-10,y:y(v)+4,textAnchor:"end",fill:"#9CA3AF",fontSize:11,fontFamily:mono},v+"%"))}),
+          // Year labels (above month labels)
+          monthLabels.map(function(ml,i){
+            if(!ml.isFirstOfYear)return null;
+            return e("text",{key:"y"+i,x:xMonth(i)+PX_PER_MONTH/2,y:H-26,textAnchor:"start",fill:"#487FFF",fontSize:10,fontWeight:700,fontFamily:mono},ml.year)
+          }),
+          // Month labels
+          monthLabels.map(function(ml,i){
+            var isToday=todayInSpan&&Math.floor(todayMonthIdx)===i;
+            return e("text",{key:"m"+i,x:xMonth(i)+PX_PER_MONTH/2,y:H-10,textAnchor:"middle",fill:isToday?"#487FFF":"#9CA3AF",fontSize:10,fontWeight:isToday?700:400},ml.label)
+          }),
+          // Vertical year separators
+          monthLabels.map(function(ml,i){
+            if(!ml.isFirstOfYear||i===0)return null;
+            return e("line",{key:"ys"+i,x1:xMonth(i),y1:pT,x2:xMonth(i),y2:pT+cH,stroke:"var(--border-light)",strokeWidth:1,strokeDasharray:"2,4"})
+          }),
+          // Planned area fill — uses xDot (center-of-month) so it aligns with the curve
+          e("path",{d:pp+" L"+xDot(totalMonths-1).toFixed(1)+","+y(0)+" L"+xDot(0).toFixed(1)+","+y(0)+" Z",fill:"#487FFF",opacity:.06}),
+          e("path",{d:pp,fill:"none",stroke:"#487FFF",strokeWidth:2.5,strokeLinecap:"round"}),
+          planned.map(function(v,i){return e("circle",{key:"p"+i,cx:xDot(i),cy:y(v),r:3,fill:"#fff",stroke:"#487FFF",strokeWidth:2})}),
+          // Actual area fill
+          ap2.length>1&&e("path",{d:aP+" L"+xDot(ap2[ap2.length-1].i).toFixed(1)+","+y(0)+" L"+xDot(0).toFixed(1)+","+y(0)+" Z",fill:"#FF9F29",opacity:.08}),
+          ap2.length>1&&e("path",{d:aP,fill:"none",stroke:"#FF9F29",strokeWidth:2.5,strokeLinecap:"round"}),
+          ap2.map(function(p2){return e("circle",{key:"a"+p2.i,cx:xDot(p2.i),cy:y(p2.v),r:3,fill:"#fff",stroke:"#FF9F29",strokeWidth:2})}),
+          // Today line — stays at xMonth (proportional pixel position based on exact date, not month-centered)
+          todayInSpan&&e("line",{x1:todayPxOffset,y1:pT,x2:todayPxOffset,y2:pT+cH,stroke:"#9CA3AF",strokeWidth:1,strokeDasharray:"6,4"}),
+          todayInSpan&&e("text",{x:todayPxOffset,y:pT-6,textAnchor:"middle",fill:"#9CA3AF",fontSize:9},"Today"),
+          // Hover tooltip — uses xDot so the vertical line and dots align with the curve circles
+          hover!==null&&hover<totalMonths&&e("g",null,
+            e("line",{x1:xDot(hover),y1:pT,x2:xDot(hover),y2:pT+cH,stroke:"#4B5563",strokeWidth:1,opacity:.3}),
+            e("circle",{cx:xDot(hover),cy:y(planned[hover]),r:5,fill:"#487FFF",stroke:"#fff",strokeWidth:2}),
+            actual[hover]!==null&&e("circle",{cx:xDot(hover),cy:y(actual[hover]),r:5,fill:"#FF9F29",stroke:"#fff",strokeWidth:2})
+          )
+        )
+      ),
+      hover!==null&&monthLabels[hover]&&e("div",{style:{display:"flex",justifyContent:"center",marginTop:12,gap:20,fontSize:13}},
+        e("span",{style:{color:"var(--text-secondary)"}},monthLabels[hover].label+" "+monthLabels[hover].year),
+        e("span",{style:{fontWeight:600,color:"#487FFF"}},"Plan: "+planned[hover]+"%"),
+        actual[hover]!==null&&e("span",{style:{fontWeight:600,color:"#FF9F29"}},"Actual: "+actual[hover]+"%"))),
+    // Methodology footnote
     e("div",{style:{marginTop:12,padding:"10px 14px",background:"var(--bg-surface)",borderRadius:6,fontSize:11,color:"var(--text-tertiary)",lineHeight:1.5}},
       e("strong",{style:{color:"var(--text-secondary)"}},"How this is calculated: "),
-      "The Actual line counts only ",e("strong",null,"completed (Done)")," tasks. In-progress tasks are ",e("strong",null,"not credited")," until marked Done. This is intentional \u2014 it ensures progress reflects delivered work, not work in motion. A negative variance with active in-progress tasks usually means the work has started but hasn\u2019t finished yet, which is normal for tasks spanning multiple weeks.")
+      "The chart spans the full project lifespan from earliest to latest task date. The Actual line counts only ",e("strong",null,"completed (Done)")," tasks. In-progress tasks are ",e("strong",null,"not credited")," until marked Done. This is intentional \u2014 it ensures progress reflects delivered work, not work in motion.")
   );
 }
 
-function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState({});var _expPhase=useState({});var cm=getCM(),todayPct=(cm+new Date().getDate()/30)/12*100;
+function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState({});var _expPhase=useState({});
+  var _scrollRef=useRef(null);
+  var _autoScrolled=useState(false);
+  // ── Continuous scrollable timeline ──
+  // Span the chart from earliest task date to latest task date (auto-fit to data).
+  // Each month is exactly PX_PER_MONTH pixels wide; total width = totalMonths * PX_PER_MONTH.
+  var PX_PER_MONTH=80;
+  var LEFT_COL_WIDTH=280;
+  // Collect every relevant date in the project
+  var allDates=[];
+  tasks.forEach(function(t){
+    if(t.startDate){var sd=new Date(t.startDate+"T00:00:00");if(!isNaN(sd))allDates.push(sd)}
+    if(t.endDate){var ed=new Date(t.endDate+"T00:00:00");if(!isNaN(ed))allDates.push(ed)}
+    if(t.milestone&&t.milestone.date){var md=new Date(t.milestone.date+"T00:00:00");if(!isNaN(md))allDates.push(md)}
+  });
+  // Fallback if no dates: show current year only
+  var spanStart,spanEnd;
+  if(allDates.length===0){
+    spanStart=new Date(new Date().getFullYear(),0,1);
+    spanEnd=new Date(new Date().getFullYear(),11,31);
+  }else{
+    spanStart=new Date(Math.min.apply(null,allDates));
+    spanEnd=new Date(Math.max.apply(null,allDates));
+    // Round span to whole-month boundaries: start of earliest month, end of latest month
+    spanStart=new Date(spanStart.getFullYear(),spanStart.getMonth(),1);
+    spanEnd=new Date(spanEnd.getFullYear(),spanEnd.getMonth()+1,0);
+  }
+  var spanStartYear=spanStart.getFullYear(),spanStartMonth=spanStart.getMonth();
+  // Total month count (inclusive)
+  var totalMonths=(spanEnd.getFullYear()-spanStartYear)*12+(spanEnd.getMonth()-spanStartMonth)+1;
+  var timelineWidth=totalMonths*PX_PER_MONTH;
+  // Helper: convert a date string to pixel offset from spanStart (left edge of timeline)
+  function dateToPx(dateStr){
+    if(!dateStr)return null;
+    var d=new Date(dateStr+"T00:00:00");
+    if(isNaN(d))return null;
+    var monthsFromStart=(d.getFullYear()-spanStartYear)*12+(d.getMonth()-spanStartMonth);
+    var dayOfMonth=d.getDate()-1;
+    var daysInMonth=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+    return(monthsFromStart+dayOfMonth/daysInMonth)*PX_PER_MONTH;
+  }
+  // Today's pixel position (only if today falls inside the span)
+  var today=new Date();
+  var todayInSpan=(today>=spanStart&&today<=spanEnd);
+  var todayPx=todayInSpan?dateToPx(today.toISOString().slice(0,10)):null;
+  // Auto-scroll to today on first render
+  useEffect(function(){
+    if(_autoScrolled[0]||!_scrollRef.current||todayPx===null)return;
+    // Center the today line in the visible area, accounting for left column
+    var container=_scrollRef.current;
+    var visibleWidth=container.clientWidth-LEFT_COL_WIDTH;
+    var targetScroll=Math.max(0,todayPx-visibleWidth/2);
+    container.scrollLeft=targetScroll;
+    _autoScrolled[1](true);
+  },[totalMonths,todayPx]);
+
   var mColors=["#1F2937","#487FFF","#45B369","#1CD4C6","#FF9F29","#EF4A00","#8B5CF6"];
   // Group by milestone
   var milestones=[];var mMap={};
@@ -3127,7 +3497,7 @@ function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState
     if(!mMap[mName]){mMap[mName]={name:mName,date:t.milestone?t.milestone.date:"",tasks:[]};milestones.push(mMap[mName])}
     mMap[mName].tasks.push(t);
   });
-  // Sort milestones by target date ascending; tiebreaker = smallest task id (matches Tasks & Milestones view)
+  // Sort milestones by target date ascending; tiebreaker = smallest task id
   milestones.sort(function(a,b){
     var aD=a.date||"9999",bD=b.date||"9999";
     if(aD!==bD)return aD<bD?-1:1;
@@ -3135,14 +3505,14 @@ function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState
     var bMinId=(b.tasks||[]).reduce(function(acc,t){return!acc||(t.id||"")<acc?(t.id||""):acc},"");
     return aMinId<bMinId?-1:1;
   });
-  // Sort tasks within each milestone — date primary, id tiebreaker (matches Tasks & Milestones view)
+  // Sort tasks within each milestone — date primary, id tiebreaker
   milestones.forEach(function(m){m.tasks.sort(function(a,b){
     var aD=a.startDate||"z",bD=b.startDate||"z";
     if(aD!==bD)return aD<bD?-1:1;
     return(a.id||"")<(b.id||"")?-1:1;
   })});
 
-  // ── Phase grouping (Session 2H) — mirrors ProjTasksMilestones ──
+  // ── Phase grouping (Session 2H) — preserved ──
   milestones.forEach(function(m){
     var firstTaskWithPhase=(m.tasks||[]).filter(function(t){return t.phaseName&&t.phaseName.trim()})[0];
     m.phaseName=firstTaskWithPhase?firstTaskWithPhase.phaseName:"";
@@ -3167,117 +3537,178 @@ function ProjGantt(p){var tasks=p.tasks,collapsed=p.collapsed;var _open=useState
   });
   var hasAnyPhase=phasesList.some(function(ph){return ph.name!==""});
 
-  function getPos(dateStr,fallback){if(!dateStr)return fallback;var d=new Date(dateStr+"T00:00:00");return isNaN(d)?fallback:d.getMonth()+(d.getDate()-1)/30}
   function toggle(name){var o=Object.assign({},_open[0]);o[name]=!o[name];_open[1](o)}
   function togglePhaseG(name){var o=Object.assign({},_expPhase[0]);o[name]=!o[name];_expPhase[1](o)}
 
-  // Pre-compute milestone positions for dependency arrows
+  // Pre-compute milestone positions in pixels (for dependency arrows)
   var mPos={};
   milestones.forEach(function(m){
-    var mSm=12,mEm=0;
-    m.tasks.forEach(function(t){var s=getPos(t.startDate,12),en=getPos(t.endDate,0);if(s<mSm)mSm=s;if(en>mEm)mEm=en});
-    if(mSm>mEm){mSm=0;mEm=11}
-    mPos[m.name]={start:mSm,end:mEm,startPct:mSm/12*100,endPct:(mEm+.5)/12*100};
+    var startPx=null,endPx=null;
+    m.tasks.forEach(function(t){
+      var sPx=dateToPx(t.startDate),ePx=dateToPx(t.endDate);
+      if(sPx!==null&&(startPx===null||sPx<startPx))startPx=sPx;
+      if(ePx!==null&&(endPx===null||ePx>endPx))endPx=ePx;
+    });
+    // Fallback to milestone target date if no task dates
+    if(startPx===null&&m.date)startPx=dateToPx(m.date);
+    if(endPx===null&&m.date)endPx=dateToPx(m.date);
+    if(startPx===null)startPx=0;
+    if(endPx===null||endPx<startPx)endPx=startPx+PX_PER_MONTH; // 1-month default width
+    mPos[m.name]={startPx:startPx,endPx:endPx};
   });
 
+  // Build month header cells: array of {label, px, isFirstOfYear}
+  var monthCells=[];var MONTH_LABELS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  for(var i=0;i<totalMonths;i++){
+    var d=new Date(spanStartYear,spanStartMonth+i,1);
+    monthCells.push({
+      label:MONTH_LABELS[d.getMonth()],
+      year:d.getFullYear(),
+      px:i*PX_PER_MONTH,
+      isFirstOfYear:d.getMonth()===0||i===0,
+      isCurrentMonth:todayInSpan&&d.getFullYear()===today.getFullYear()&&d.getMonth()===today.getMonth()
+    });
+  }
+  // Build year header cells: group consecutive months by year
+  var yearCells=[];var curYear=null,curStart=0,curCount=0;
+  monthCells.forEach(function(mc,idx){
+    if(mc.year!==curYear){
+      if(curYear!==null)yearCells.push({year:curYear,startPx:curStart*PX_PER_MONTH,widthPx:curCount*PX_PER_MONTH});
+      curYear=mc.year;curStart=idx;curCount=1;
+    }else{curCount++}
+  });
+  if(curYear!==null)yearCells.push({year:curYear,startPx:curStart*PX_PER_MONTH,widthPx:curCount*PX_PER_MONTH});
+
   return e("div",{style:{animation:"fadeIn .3s"}},e("h2",{style:{fontSize:20,fontWeight:700,marginBottom:12}},"Gantt Chart"),
-    // Legend
-    e("div",{style:{display:"flex",gap:16,marginBottom:12,flexWrap:"wrap",fontSize:11,color:"var(--text-secondary)"}},
-      e("span",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:12,height:3,background:"#EF4A00",opacity:.4}}),e("span",null,"Today")),
-      e("span",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:12,height:3,background:"#8B5CF6"}}),e("span",null,"Dependency")),
-      e("span",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:10,height:10,borderRadius:2,background:"#45B369"}}),e("span",null,"Done")),
-      e("span",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:10,height:10,borderRadius:2,background:"#FF9F29"}}),e("span",null,"In Progress"))),
-    e("div",{className:"card",style:{overflow:"hidden"}},e("div",{style:{overflowX:"auto"}},
-      e("div",{style:{minWidth:900}},
-      // Quarter header
-      e("div",{style:{display:"flex",height:24,borderBottom:"1px solid var(--border-light)",background:"var(--bg-surface)"}},
-        e("div",{style:{width:280,flexShrink:0,borderRight:"1px solid var(--border)"}}),
-        e("div",{style:{flex:1,display:"flex"}},
-          [{l:"Q1",span:3},{l:"Q2",span:3},{l:"Q3",span:3},{l:"Q4",span:3}].map(function(q,qi){
-            return e("div",{key:qi,style:{flex:q.span,textAlign:"center",fontSize:10,fontWeight:700,color:"#487FFF",padding:"4px 0",borderRight:qi<3?"1px dashed var(--border)":"none"}},q.l)}))),
-      // Month header
-      e("div",{style:{display:"flex",height:36,borderBottom:"2px solid var(--border)",background:"var(--bg-card)"}},
-        e("div",{style:{width:280,flexShrink:0,padding:"8px 16px",fontSize:13,fontWeight:700,borderRight:"1px solid var(--border)"}},"Milestone"),
-        e("div",{style:{flex:1,display:"flex"}},MO.map(function(m,i){return e("div",{key:i,style:{flex:1,textAlign:"center",padding:"8px 0",fontSize:11,fontWeight:i===cm?700:400,color:i===cm?"#487FFF":"#9CA3AF",background:i===cm?"rgba(72,127,255,.08)":"transparent",borderRight:"1px solid var(--border-light)"}},m)}))),
+    // Legend + jump-to-today button
+    e("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,gap:12,flexWrap:"wrap"}},
+      e("div",{style:{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"var(--text-secondary)"}},
+        todayInSpan&&e("button",{
+          onClick:function(){
+            if(_scrollRef.current&&todayPx!==null){
+              var container=_scrollRef.current;
+              var visibleWidth=container.clientWidth-LEFT_COL_WIDTH;
+              container.scrollTo({left:Math.max(0,todayPx-visibleWidth/2),behavior:"smooth"});
+            }
+          },
+          style:{padding:"4px 12px",fontSize:11,fontWeight:600,background:"#487FFF",color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}
+        },"\u2190 Jump to Today")
+      ),
+      e("div",{style:{display:"flex",gap:16,flexWrap:"wrap",fontSize:11,color:"var(--text-secondary)"}},
+        todayInSpan&&e("span",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:12,height:3,background:"#EF4A00",opacity:.4}}),e("span",null,"Today")),
+        e("span",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:12,height:3,background:"#8B5CF6"}}),e("span",null,"Dependency")),
+        e("span",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:10,height:10,borderRadius:2,background:"#45B369"}}),e("span",null,"Done")),
+        e("span",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:10,height:10,borderRadius:2,background:"#FF9F29"}}),e("span",null,"In Progress")))
+    ),
+    e("div",{className:"card",style:{overflow:"hidden"}},
+      e("div",{ref:_scrollRef,style:{overflowX:"auto",overflowY:"hidden"}},
+        e("div",{style:{minWidth:LEFT_COL_WIDTH+timelineWidth,position:"relative"}},
+        // Year header row
+        e("div",{style:{display:"flex",height:24,borderBottom:"1px solid var(--border-light)",background:"var(--bg-surface)"}},
+          e("div",{style:{width:LEFT_COL_WIDTH,flexShrink:0,borderRight:"1px solid var(--border)"}}),
+          e("div",{style:{position:"relative",width:timelineWidth,flexShrink:0}},
+            yearCells.map(function(yc,yi){
+              return e("div",{key:yi,style:{position:"absolute",left:yc.startPx,width:yc.widthPx,top:0,bottom:0,textAlign:"center",fontSize:11,fontWeight:700,color:"#487FFF",padding:"4px 0",borderRight:yi<yearCells.length-1?"1px dashed var(--border)":"none",fontFamily:mono}},yc.year)
+            })
+          )),
+        // Month header row
+        e("div",{style:{display:"flex",height:36,borderBottom:"2px solid var(--border)",background:"var(--bg-card)"}},
+          e("div",{style:{width:LEFT_COL_WIDTH,flexShrink:0,padding:"8px 16px",fontSize:13,fontWeight:700,borderRight:"1px solid var(--border)"}},"Milestone"),
+          e("div",{style:{position:"relative",width:timelineWidth,flexShrink:0}},
+            monthCells.map(function(mc,mi){
+              return e("div",{key:mi,style:{position:"absolute",left:mc.px,width:PX_PER_MONTH,top:0,bottom:0,textAlign:"center",padding:"8px 0",fontSize:11,fontWeight:mc.isCurrentMonth?700:400,color:mc.isCurrentMonth?"#487FFF":"#9CA3AF",background:mc.isCurrentMonth?"rgba(72,127,255,.08)":"transparent",borderRight:"1px solid var(--border-light)"}},mc.label)
+            })
+          )),
 
-      phasesList.map(function(ph,phi){
-        var phaseCollapsed=!!_expPhase[0][ph.name||"__nophase__"];
-        var showPhaseHeader=hasAnyPhase&&ph.name!=="";
-        var phaseHeader=showPhaseHeader?e("div",{
-          key:"phh"+phi,
-          onClick:function(){togglePhaseG(ph.name)},
-          style:{display:"flex",minHeight:38,borderBottom:"1px solid var(--border)",cursor:"pointer",background:"linear-gradient(90deg, rgba(72,127,255,.10), rgba(72,127,255,.02))",borderLeft:"4px solid #487FFF"}},
-          e("div",{style:{width:280,flexShrink:0,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}},
-            e("div",{style:{fontSize:11,color:"#487FFF",transition:"transform .2s",transform:phaseCollapsed?"":"rotate(90deg)"}},"\u25B6"),
-            e("div",{style:{fontSize:9,fontWeight:700,color:"#487FFF",letterSpacing:.5,background:"rgba(72,127,255,.15)",padding:"2px 6px",borderRadius:4}},"PHASE "+(ph.phaseIdx!==null?ph.phaseIdx:"")),
-            e("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-primary)",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},ph.name),
-            e("span",{style:{fontSize:9,color:"var(--text-tertiary)"}},ph.milestones.length+" m")
-          ),
-          e("div",{style:{flex:1}})
-        ):null;
-        var phaseRows=phaseCollapsed?[]:ph.milestones.map(function(m,mi){
-        var hasPhaseIdx=(m.phaseIdx!==null&&m.phaseIdx!==undefined);
-        var mileLabel=hasPhaseIdx?(m.phaseIdx+"."+(mi+1)):(mi+1+"");
-        var mColor=mColors[mi%mColors.length];
-        var doneTasks=m.tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
-        var mPct=m.tasks.length>0?Math.round(doneTasks/m.tasks.length*100):0;
-        var mSm=mPos[m.name].start,mEm=mPos[m.name].end;
-        var isOpen=collapsed?_open[0][m.name]===true:_open[0][m.name]!==false;
-        var rows=[];
+        // Empty state when no tasks at all
+        tasks.length===0?e("div",{style:{padding:"40px 20px",textAlign:"center",color:"var(--text-tertiary)",fontSize:13}},
+          e("div",{style:{fontSize:32,marginBottom:8}},"\uD83D\uDCC5"),
+          e("div",{style:{fontWeight:600}},"No tasks yet")):
 
-        // Check dependency
-        var depOn="";m.tasks.forEach(function(t){if(t.dependsOn)depOn=t.dependsOn});
-        // Compute dependency arrow positions
-        var depArrow=null;
-        if(depOn&&mPos[depOn]){
-          var predEnd=mPos[depOn].endPct;
-          var curStart=mPos[m.name].startPct;
-          depArrow={from:predEnd,to:curStart}
-        }
+        phasesList.map(function(ph,phi){
+          var phaseCollapsed=!!_expPhase[0][ph.name||"__nophase__"];
+          var showPhaseHeader=hasAnyPhase&&ph.name!=="";
+          var phaseHeader=showPhaseHeader?e("div",{
+            key:"phh"+phi,
+            onClick:function(){togglePhaseG(ph.name)},
+            style:{display:"flex",minHeight:38,borderBottom:"1px solid var(--border)",cursor:"pointer",background:"linear-gradient(90deg, rgba(72,127,255,.10), rgba(72,127,255,.02))",borderLeft:"4px solid #487FFF"}},
+            e("div",{style:{width:LEFT_COL_WIDTH,flexShrink:0,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}},
+              e("div",{style:{fontSize:11,color:"#487FFF",transition:"transform .2s",transform:phaseCollapsed?"":"rotate(90deg)"}},"\u25B6"),
+              e("div",{style:{fontSize:9,fontWeight:700,color:"#487FFF",letterSpacing:.5,background:"rgba(72,127,255,.15)",padding:"2px 6px",borderRadius:4}},"PHASE "+(ph.phaseIdx!==null?ph.phaseIdx:"")),
+              e("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-primary)",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},ph.name),
+              e("span",{style:{fontSize:9,color:"var(--text-tertiary)"}},ph.milestones.length+" m")
+            ),
+            e("div",{style:{flex:1}})
+          ):null;
+          var phaseRows=phaseCollapsed?[]:ph.milestones.map(function(m,mi){
+            var hasPhaseIdx=(m.phaseIdx!==null&&m.phaseIdx!==undefined);
+            var mileLabel=hasPhaseIdx?(m.phaseIdx+"."+(mi+1)):(mi+1+"");
+            var mColor=mColors[mi%mColors.length];
+            var doneTasks=m.tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
+            var mPct=m.tasks.length>0?Math.round(doneTasks/m.tasks.length*100):0;
+            var mStartPx=mPos[m.name].startPx,mEndPx=mPos[m.name].endPx;
+            // Minimum bar width = 60% of a month (48px) so "100%" text fits comfortably
+            var mWidthPx=Math.max(mEndPx-mStartPx,PX_PER_MONTH*0.6);
+            var isOpen=collapsed?_open[0][m.name]===true:_open[0][m.name]!==false;
+            var rows=[];
 
-        rows.push(e("div",{key:"m"+mi,style:{display:"flex",minHeight:depOn?52:44,borderBottom:"1px solid var(--border)",cursor:"pointer",background:"var(--bg-surface)"},onClick:function(){toggle(m.name)}},
-          e("div",{style:{width:280,flexShrink:0,padding:"6px 16px",display:"flex",alignItems:"center",gap:6,borderRight:"1px solid var(--border)"}},
-            e("div",{style:{fontSize:10,color:"var(--text-tertiary)",transition:"transform .2s",transform:isOpen?"rotate(90deg)":""}},"\u25B6"),
-            e("div",{style:{minWidth:22,height:22,padding:"0 5px",borderRadius:5,background:mColor,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:9,color:"#fff",flexShrink:0}},mileLabel),
-            e("div",{style:{flex:1,minWidth:0}},
-              e("div",{style:{fontSize:12,fontWeight:700}},m.name),
-              e("div",{style:{fontSize:9,color:"var(--text-tertiary)"}},doneTasks+"/"+m.tasks.length+" \u2022 "+mPct+"%"),
-              depOn&&e("div",{className:"gantt-dep-label"},"\u21B3 depends on: "+depOn))),
-          e("div",{style:{flex:1,position:"relative",display:"flex",alignItems:"center"}},
-            e("div",{style:{position:"absolute",left:todayPct+"%",top:0,bottom:0,width:2,background:"#EF4A00",opacity:.3,zIndex:2}}),
-            // Dependency arrow (SVG overlay)
-            depArrow&&e("svg",{style:{position:"absolute",left:0,top:0,width:"100%",height:"100%",pointerEvents:"none",zIndex:3},viewBox:"0 0 1000 44",preserveAspectRatio:"none"},
-              e("defs",null,e("marker",{id:"arrowhead"+mi,markerWidth:8,markerHeight:6,refX:7,refY:3,orient:"auto",fill:"#8B5CF6"},
-                e("polygon",{points:"0 0, 8 3, 0 6"}))),
-              e("path",{d:"M"+Math.round(depArrow.from*10)+" 22 C"+Math.round((depArrow.from*10+depArrow.to*10)/2)+" 4, "+Math.round((depArrow.from*10+depArrow.to*10)/2)+" 4, "+Math.round(depArrow.to*10)+" 22",fill:"none",stroke:"#8B5CF6",strokeWidth:2,strokeDasharray:"6,3",markerEnd:"url(#arrowhead"+mi+")"})),
-            // Milestone bar
-            e("div",{style:{position:"absolute",left:(mSm/12*100)+"%",width:Math.min((Math.max(mEm-mSm+.5,.5)/12*100),(100-mSm/12*100))+"%",top:8,height:28,borderRadius:6,background:mColor+"22",border:"2px solid "+mColor,overflow:"hidden"}},
-              e("div",{style:{height:"100%",width:mPct+"%",background:mColor,opacity:.4}}),
-              e("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:mColor}},mPct+"%")))
-        ));
+            // Check dependency
+            var depOn="";m.tasks.forEach(function(t){if(t.dependsOn)depOn=t.dependsOn});
+            var depArrow=null;
+            if(depOn&&mPos[depOn]){
+              depArrow={fromPx:mPos[depOn].endPx,toPx:mPos[m.name].startPx};
+            }
 
-        // Task rows (when expanded)
-        if(isOpen){m.tasks.forEach(function(t,ti){
-          var isDone=(t.taskStatus||"").toLowerCase()==="done";
-          var isIP=(t.taskStatus||"").toLowerCase()==="in progress";
-          var tPct=isDone?100:isIP?50:0;
-          var sm=getPos(t.startDate,mSm),em=getPos(t.endDate,mEm);
-          rows.push(e("div",{key:t.id,style:{display:"flex",height:38,borderBottom:"1px solid var(--border-light)",background:isDone?"rgba(69,179,105,.02)":"#fff"}},
-            e("div",{style:{width:280,flexShrink:0,padding:"4px 16px 4px 44px",display:"flex",alignItems:"center",gap:6,borderRight:"1px solid var(--border)"}},
-              e("div",{style:{width:8,height:8,borderRadius:"50%",background:isDone?"#45B369":isIP?"#FF9F29":"#D1D5DB",flexShrink:0}}),
-              e("span",{style:{fontSize:11,fontWeight:500,color:isDone?"#6B7280":"#4B5563",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:isDone?"line-through":"none"}},t.name)),
-            e("div",{style:{flex:1,position:"relative"}},
-              e("div",{style:{position:"absolute",left:todayPct+"%",top:0,bottom:0,width:1,background:"#EF4A00",opacity:.15}}),
-              e("div",{style:{position:"absolute",left:(sm/12*100)+"%",width:Math.min((Math.max(em-sm+.3,.3)/12*100),(100-sm/12*100))+"%",top:10,height:18,borderRadius:4,background:"var(--bg-hover)",overflow:"hidden"}},
-                e("div",{style:{height:"100%",width:tPct+"%",background:isDone?"#45B369":isIP?"#FF9F29":"#D1D5DB",borderRadius:4}})))
-          ));
-        })}
-        return e("div",{key:"mg"+mi},rows);
-      });
-        // Phase wrapper: header (if shown) followed by milestone rows
-        return e("div",{key:"ph"+phi},phaseHeader,phaseRows);
-      })
-    )))
+            rows.push(e("div",{key:"m"+mi,style:{display:"flex",minHeight:depOn?52:44,borderBottom:"1px solid var(--border)",cursor:"pointer",background:"var(--bg-surface)"},onClick:function(){toggle(m.name)}},
+              e("div",{style:{width:LEFT_COL_WIDTH,flexShrink:0,padding:"6px 16px",display:"flex",alignItems:"center",gap:6,borderRight:"1px solid var(--border)"}},
+                e("div",{style:{fontSize:10,color:"var(--text-tertiary)",transition:"transform .2s",transform:isOpen?"rotate(90deg)":""}},"\u25B6"),
+                e("div",{style:{minWidth:22,height:22,padding:"0 5px",borderRadius:5,background:mColor,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:9,color:"#fff",flexShrink:0}},mileLabel),
+                e("div",{style:{flex:1,minWidth:0}},
+                  e("div",{style:{fontSize:12,fontWeight:700}},m.name),
+                  e("div",{style:{fontSize:9,color:"var(--text-tertiary)"}},doneTasks+"/"+m.tasks.length+" \u2022 "+mPct+"%"),
+                  depOn&&e("div",{className:"gantt-dep-label"},"\u21B3 depends on: "+depOn))),
+              e("div",{style:{position:"relative",width:timelineWidth,flexShrink:0,display:"flex",alignItems:"center"}},
+                // Today line
+                todayInSpan&&e("div",{style:{position:"absolute",left:todayPx,top:0,bottom:0,width:2,background:"#EF4A00",opacity:.3,zIndex:2}}),
+                // Dependency arrow (SVG overlay) — drawn in pixel coordinates
+                depArrow&&e("svg",{style:{position:"absolute",left:0,top:0,width:timelineWidth,height:"100%",pointerEvents:"none",zIndex:3}},
+                  e("defs",null,e("marker",{id:"arrowhead"+phi+"_"+mi,markerWidth:8,markerHeight:6,refX:7,refY:3,orient:"auto",fill:"#8B5CF6"},
+                    e("polygon",{points:"0 0, 8 3, 0 6"}))),
+                  e("path",{d:"M"+depArrow.fromPx+" 22 C"+((depArrow.fromPx+depArrow.toPx)/2)+" 4, "+((depArrow.fromPx+depArrow.toPx)/2)+" 4, "+depArrow.toPx+" 22",fill:"none",stroke:"#8B5CF6",strokeWidth:2,strokeDasharray:"6,3",markerEnd:"url(#arrowhead"+phi+"_"+mi+")"})),
+                // Milestone bar
+                e("div",{style:{position:"absolute",left:mStartPx,width:mWidthPx,top:8,height:28,borderRadius:6,background:mColor+"22",border:"2px solid "+mColor,overflow:"hidden"}},
+                  e("div",{style:{height:"100%",width:mPct+"%",background:mColor,opacity:.4}}),
+                  e("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:mColor}},mPct+"%")))
+            ));
+
+            // Task rows (when expanded)
+            if(isOpen){m.tasks.forEach(function(t,ti){
+              var isDone=(t.taskStatus||"").toLowerCase()==="done";
+              var isIP=(t.taskStatus||"").toLowerCase()==="in progress";
+              var tPct=isDone?100:isIP?50:0;
+              var tStartPx=dateToPx(t.startDate);
+              var tEndPx=dateToPx(t.endDate);
+              if(tStartPx===null)tStartPx=mStartPx;
+              if(tEndPx===null||tEndPx<tStartPx)tEndPx=tStartPx+PX_PER_MONTH/2;
+              // Minimum task bar width = 25% of a month (20px) so single-day tasks remain visible
+              var tWidthPx=Math.max(tEndPx-tStartPx,PX_PER_MONTH*0.25);
+              rows.push(e("div",{key:t.id,style:{display:"flex",height:38,borderBottom:"1px solid var(--border-light)",background:isDone?"rgba(69,179,105,.02)":"#fff"}},
+                e("div",{style:{width:LEFT_COL_WIDTH,flexShrink:0,padding:"4px 16px 4px 44px",display:"flex",alignItems:"center",gap:6,borderRight:"1px solid var(--border)"}},
+                  e("div",{style:{width:8,height:8,borderRadius:"50%",background:isDone?"#45B369":isIP?"#FF9F29":"#D1D5DB",flexShrink:0}}),
+                  e("span",{style:{fontSize:11,fontWeight:500,color:isDone?"#6B7280":"#4B5563",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:isDone?"line-through":"none"}},t.name)),
+                e("div",{style:{position:"relative",width:timelineWidth,flexShrink:0}},
+                  todayInSpan&&e("div",{style:{position:"absolute",left:todayPx,top:0,bottom:0,width:1,background:"#EF4A00",opacity:.15}}),
+                  e("div",{style:{position:"absolute",left:tStartPx,width:tWidthPx,top:10,height:18,borderRadius:4,background:"var(--bg-hover)",overflow:"hidden"}},
+                    e("div",{style:{height:"100%",width:tPct+"%",background:isDone?"#45B369":isIP?"#FF9F29":"#D1D5DB",borderRadius:4}})))
+              ));
+            })}
+            return e("div",{key:"mg"+mi},rows);
+          });
+          // Phase wrapper: header (if shown) followed by milestone rows
+          return e("div",{key:"ph"+phi},phaseHeader,phaseRows);
+        })
+      ))
+    )
   );
 }
 
@@ -4424,10 +4855,11 @@ function ProjReports(p){
 // ══════════════════════════════════════════
 function PrintAllView(p){
   var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics,bi=p.budgetItems||[],br=p.budgetReals||[],reg=p.regItems||[],wr=p.weeklyReps||[];
-  var actualPct=Number(proj.actualPct)||0,plannedPct=(proj.planPct||0);
+  // Use shared variance helper — matches S-Curve exactly
+  var _pv=computeProjectVariance(tasks);
+  var actualPct=_pv.actualPct,plannedPct=_pv.plannedPct,variance=_pv.variance;
   var totalBudget=bi.reduce(function(a,b){return a+(Number(b.total)||0)},0),totalReal=br.reduce(function(a,b){return a+(Number(b.total)||0)},0);
   var overallBudget=Number(proj.overallBudget)||0;
-  var variance=Math.round((actualPct-plannedPct)*10)/10;
   function fI(n){return"IDR "+Number(n).toLocaleString("id-ID",{minimumFractionDigits:2,maximumFractionDigits:2})}
   var openRisks=risks.filter(function(r){return r.status==="Open"});
   var openIssues=reg.filter(function(r){return r.status==="Open"});
@@ -8416,7 +8848,7 @@ function App(){
         e("li",{className:"sidebar-item"},e("button",{onClick:function(){
           if(isExtGuest&&_guestInfo[0]&&!_guestInfo[0].feedbackSubmitted){_showGuestFeedback[1](true);_sidebarOpen[1](false);return}
           if(isExtGuest&&_guestInfo[0]){apiPost("guestLogout",{guestName:_guestInfo[0].guestName,sessionId:_guestInfo[0].sessionId,feedbackSubmitted:_guestInfo[0].feedbackSubmitted})}
-          apiPost("userLogout",{userName:isExtGuest&&_guestInfo[0]?"External Party: "+_guestInfo[0].guestName:userName});_admin[1](false);_guestInfo[1](null);_sidebarOpen[1](false);try{sessionStorage.removeItem("scci_session")}catch(x){}}},"\u23FB"," ",t("sb_logout")))
+          apiPost("userLogout",{userName:isExtGuest&&_guestInfo[0]?"External Party: "+_guestInfo[0].guestName:userName});_admin[1](false);_guestInfo[1](null);_sidebarOpen[1](false);_viewAsExternal[1](false);_selectedProject[1](null);try{sessionStorage.removeItem("scci_session")}catch(x){}}},"\u23FB"," ",t("sb_logout")))
       )
     ),
 
@@ -8429,28 +8861,28 @@ function App(){
         e("div",{className:"navbar-actions"},
           e("button",{className:"icon-btn",onClick:loadProjects,title:"Refresh"},"\u21BB"),
           // View-As-External toggle (BOD/GM/PMO/admin only)
+          // This button is ONLY enabled when a project is currently selected.
+          // Russell's expectation: "preview the CURRENT project as external" — no auto-picking.
           canViewAsExternal&&e("button",{
             className:"icon-btn",
             onClick:function(){
-              var entering=!viewAsExternal;
-              _viewAsExternal[1](entering);
-              if(entering){
-                // Auto-select the first project so the external view actually renders.
-                // External users always land on a project — there's no project list view for them.
-                _page[1]("mgmt");
-                _targetTab[1](null);
-                if(!selectedProject&&projects.length>0){
-                  var sorted=projects.slice().sort(function(a,b){return(a.name||"").localeCompare(b.name||"")});
-                  _selectedProject[1](sorted[0].id);
-                }
-              }else{
-                // Exiting preview — return to management dashboard
-                _selectedProject[1](null);
-                _targetTab[1](null);
-              }
+              // Guard: only allow toggle when there's a project to preview
+              if(!viewAsExternal&&!selectedProject)return;
+              _viewAsExternal[1](!viewAsExternal);
             },
-            title:viewAsExternal?"Exit External Preview":"View as External User",
-            style:{background:viewAsExternal?"#FBBF24":"transparent",color:viewAsExternal?"#78350F":"var(--text-secondary)",fontWeight:viewAsExternal?700:400}
+            disabled:!viewAsExternal&&!selectedProject,
+            title:viewAsExternal
+              ?"Exit External Preview"
+              :selectedProject
+                ?"View this project as External User"
+                :"Open a project first, then click here to preview it as external",
+            style:{
+              background:viewAsExternal?"#FBBF24":"transparent",
+              color:viewAsExternal?"#78350F":(!selectedProject?"var(--text-tertiary)":"var(--text-secondary)"),
+              fontWeight:viewAsExternal?700:400,
+              opacity:(!viewAsExternal&&!selectedProject)?.4:1,
+              cursor:(!viewAsExternal&&!selectedProject)?"not-allowed":"pointer"
+            }
           },viewAsExternal?"\uD83D\uDC41 Exit Preview":"\uD83D\uDC41"),
           !isExtGuest&&e(NotificationBell,{notifications:_notifications[0],onRead:function(i){_notifications[1](_notifications[0].map(function(n,j){return j===i?Object.assign({},n,{read:true}):n}))},onReadAll:function(){_notifications[1](_notifications[0].map(function(n){return Object.assign({},n,{read:true})}))},onClear:function(){_notifications[1]([]);try{localStorage.setItem("scci_notif_cleared",new Date().toISOString())}catch(x){};apiPost("clearNotifications",{user:userName,role:userRole})},onNavigate:function(pid,tab){_selectedProject[1](pid);_page[1]("mgmt");if(tab)_targetTab[1](tab)}}),
           !mob&&e("span",{style:{fontSize:12,color:"var(--text-tertiary)"}},dateStr),
@@ -8460,7 +8892,8 @@ function App(){
         )),
 
       // Preview-as-external banner — sticky, impossible to miss
-      viewAsExternal&&e("div",{
+      // Hidden for ext.guest because they ARE external; the banner would confuse them
+      viewAsExternal&&!isExtGuest&&e("div",{
         onClick:function(){_viewAsExternal[1](false)},
         style:{
           background:"linear-gradient(90deg, #FBBF24 0%, #F59E0B 100%)",
@@ -8482,7 +8915,7 @@ function App(){
       e("div",{className:"dashboard-main-body"},
         selectedProject
           ?(userRole==="external"||viewAsExternal)
-            ?e(ExternalCheckpointView,{projectId:selectedProject,hideBack:isExtGuest,isExtGuest:isExtGuest,onBack:function(){_selectedProject[1](null);loadProjects()},
+            ?e(ExternalCheckpointView,{projectId:selectedProject,hideBack:isExtGuest,isExtGuest:isExtGuest,onBack:function(){_selectedProject[1](null);_viewAsExternal[1](false);loadProjects()},
               onFeedback:isExtGuest&&_guestInfo[0]?function(){_feedbackProjectId[1](selectedProject);var pr=projects.filter(function(p2){return p2.id===selectedProject})[0];_feedbackProjectName[1](pr?pr.name:"");_showGuestFeedback[1](true)}:null})
             :e(ProjectDetail,{projectId:selectedProject,admin:(function(){
               // GM: edit only if selected project is in their assignedProjects (matches by ID or name)
@@ -8492,9 +8925,6 @@ function App(){
               }
               return canEditProject;
             })(),userRole:userRole,userName:userName,initialTab:_targetTab[0],onTabChange:function(t){_targetTab[1](t)},onBack:function(){_selectedProject[1](null);_targetTab[1](null);loadProjects()}})
-          :viewAsExternal
-            // In preview mode without a selected project: show a simple project list (mimics what external sees)
-            ?e(ProjectList,{projects:projects,admin:false,loading:_loading[0],onSelect:function(id){_selectedProject[1](id)},onRefresh:loadProjects,pageTitle:"My Projects",userName:userName,userRole:"external",tasksByPIC:[],isTemplatesView:false})
           :page==="crm"?e(CRMPage)
           :page==="bd"?e(BDPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userName:userName})
           :page==="analytics"?e(AnalyticsPage,{projects:projects,tasksByPIC:_tasksByPIC[0],onSelect:function(id){_selectedProject[1](id)}})
