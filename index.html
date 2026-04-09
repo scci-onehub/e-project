@@ -983,10 +983,7 @@ function LoginModal(p){
 
     // Centered content
     e("div",{style:{position:"relative",zIndex:1,width:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 20px",minHeight:"100vh"}},
-      // SCCI corporate logo — top of page, prominent brand identity
-      // PNG with transparency, blends naturally with the dark hero gradient
-      e("div",{style:{marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}},
-        e("img",{src:SCCI_LOGO_B64,alt:"SCCI",style:{maxHeight:90,maxWidth:280,objectFit:"contain",display:"block",filter:"drop-shadow(0 4px 12px rgba(0,0,0,.35))"}})),
+      // SCCI corporate logo placement is pending a clean source file — current SCCI_LOGO_B64 PNG is corrupted
       // OneHub product branding
       e("div",{style:{display:"flex",alignItems:"center",gap:14,marginBottom:32}},
         e("div",{style:{display:"flex",alignItems:"center",justifyContent:"center"}},e(HubLogo,{size:48})),
@@ -8919,9 +8916,7 @@ function App(){
     // ── Sidebar ──
     mob&&_sidebarOpen[0]&&e("div",{className:"mobile-overlay",onClick:function(){_sidebarOpen[1](false)}}),
     e("aside",{className:"sidebar"+(mob&&_sidebarOpen[0]?" open":""),style:mob&&!_sidebarOpen[0]?{transform:"translateX(-100%)"}:undefined},
-      // SCCI corporate logo — top of sidebar, prominent brand identity (PNG with transparency)
-      e("div",{style:{padding:"20px 24px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center"}},
-        e("img",{src:SCCI_LOGO_B64,alt:"SCCI",style:{maxHeight:60,maxWidth:"100%",objectFit:"contain",display:"block"}})),
+      // SCCI corporate logo placement is pending a clean source file — current SCCI_LOGO_B64 PNG is corrupted
       // OneHub product branding — clickable, returns to dashboard
       e("a",{className:"sidebar-logo",href:"#",onClick:function(ev){ev.preventDefault();if(isExtGuest)return;_page[1]("mgmt");_selectedProject[1](null);_sidebarOpen[1](false)}},
         e("div",{style:{flexShrink:0}},e(HubLogo,{size:40})),
