@@ -1815,8 +1815,19 @@ function ExternalCheckpointView(p){
     var status=m.done===m.total&&m.total>0?"Done":m.inProgress>0?"In Progress":m.done>0?"In Progress":"Not Started";
     // If has dependency and nothing started, show "Pending"
     if(status==="Not Started"&&m.dependsOn)status="Pending";
-    return{name:m.name,date:m.date,poc:poc,total:m.total,done:m.done,inProgress:m.inProgress,status:status,dependsOn:m.dependsOn}});
-  milestones.sort(function(a,b){return(a.date||"9999")>(b.date||"9999")?1:(a.date||"9999")<(b.date||"9999")?-1:0});
+    return{name:m.name,date:m.date,poc:poc,total:m.total,done:m.done,inProgress:m.inProgress,status:status,dependsOn:m.dependsOn,tasks:m.tasks}});
+  // Sort milestones by target date ascending; tiebreaker = smallest task id in each milestone.
+  // This matches the sort used in ProjTasksMilestones (line ~2697) and ProjGantt (line ~3501)
+  // so all three views (Tasks & Milestones, Gantt, External Check Point) display milestones
+  // in the same order. Without the tiebreaker, milestones sharing the same due date would
+  // appear in arbitrary order here while the other views show them consistently.
+  milestones.sort(function(a,b){
+    var aD=a.date||"9999",bD=b.date||"9999";
+    if(aD!==bD)return aD<bD?-1:1;
+    var aMinId=(a.tasks||[]).reduce(function(acc,t){return!acc||(t.id||"")<acc?(t.id||""):acc},"");
+    var bMinId=(b.tasks||[]).reduce(function(acc,t){return!acc||(t.id||"")<acc?(t.id||""):acc},"");
+    return aMinId<bMinId?-1:1;
+  });
 
   // Recent activities (tasks changed recently)
   var recentDone=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).slice(0,5);
@@ -1859,16 +1870,55 @@ function ExternalCheckpointView(p){
           e(Badge2,{ok:isOnBudget,label:"On-Budget"}),
           e(Badge2,{ok:isOnResources,label:"On-Resources"}))),
 
-      // Weekly Key Activities
+      // Weekly Key Activities — tasks overlapping with the report's week, grouped by milestone
       e("div",{className:"card",style:{padding:"16px 20px"}},
         e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:12}},"Weekly Key Activities"),
-        latestReport&&latestReport.summary?e("div",null,
-          latestReport.summary.split(/\.\s+|;\s+|\n/).filter(function(s){return s.trim()}).map(function(s,i){
-            return e("div",{key:i,style:{fontSize:13,color:"var(--text-secondary)",padding:"4px 0",lineHeight:1.6,borderBottom:"1px solid var(--border-light)"}},"\u2022 "+s.trim().replace(/\.$/,""))})):
-        e("div",null,
-          inProgress.length>0&&e("div",null,inProgress.map(function(t,i){return e("div",{key:i,style:{fontSize:13,color:"var(--text-secondary)",padding:"4px 0",borderBottom:"1px solid var(--border-light)"}},"• "+t.name+" (in progress)")})),
-          recentDone.length>0&&e("div",{style:{marginTop:8}},recentDone.slice(0,3).map(function(t,i){return e("div",{key:i,style:{fontSize:13,color:"var(--text-tertiary)",padding:"4px 0"}},"• "+t.name+" (completed)")})),
-          inProgress.length===0&&recentDone.length===0&&e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No recent activity"))),
+        (function(){
+          // Determine the week window from the latest report (fallback: current calendar week if no report)
+          var weekStart=null,weekEnd=null;
+          if(latestReport&&latestReport.weekStart&&latestReport.weekEnd){
+            weekStart=latestReport.weekStart;
+            weekEnd=latestReport.weekEnd;
+          }
+          if(!weekStart||!weekEnd){
+            return e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No tasks scheduled for this reporting week");
+          }
+          // Filter tasks that overlap with the report's week: task.startDate <= weekEnd AND task.endDate >= weekStart
+          // A task "overlaps" if any part of it falls within [weekStart, weekEnd]
+          var weekTasks=tasks.filter(function(t){
+            var ts=t.startDate||t.milestone&&t.milestone.date||"";
+            var te=t.endDate||t.milestone&&t.milestone.date||"";
+            if(!ts&&!te)return false;
+            if(!ts)ts=te;
+            if(!te)te=ts;
+            return ts<=weekEnd&&te>=weekStart;
+          });
+          if(weekTasks.length===0){
+            return e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No tasks scheduled for this reporting week");
+          }
+          // Group by milestone name
+          var mileMap2={};var mileOrder=[];
+          weekTasks.forEach(function(t){
+            var mn=t.milestone&&t.milestone.name?t.milestone.name:"(No Milestone)";
+            if(!mileMap2[mn]){mileMap2[mn]=[];mileOrder.push(mn)}
+            mileMap2[mn].push(t);
+          });
+          // Render: each milestone header followed by its tasks with status
+          return e("div",null,mileOrder.map(function(mn,mi){
+            var mTasks=mileMap2[mn];
+            return e("div",{key:"m"+mi,style:{marginBottom:12}},
+              e("div",{style:{fontSize:11,fontWeight:700,color:"#487FFF",marginBottom:6,textTransform:"uppercase",letterSpacing:.5}},mn),
+              mTasks.map(function(t,ti){
+                var st=(t.taskStatus||"Not Started");
+                var stLower=st.toLowerCase();
+                var stColor=stLower==="done"?"#45B369":stLower==="in progress"?"#FF9F29":stLower==="pending review"?"#8B5CF6":"var(--text-tertiary)";
+                var stBg=stLower==="done"?"rgba(69,179,105,.12)":stLower==="in progress"?"rgba(255,159,41,.12)":stLower==="pending review"?"rgba(139,92,246,.12)":"var(--bg-surface)";
+                return e("div",{key:"t"+ti,style:{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",borderBottom:ti<mTasks.length-1?"1px solid var(--border-light)":"none"}},
+                  e("div",{style:{flex:1,fontSize:13,color:"var(--text-secondary)",lineHeight:1.5}},t.name),
+                  e("span",{style:{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:stBg,color:stColor,whiteSpace:"nowrap",flexShrink:0}},st))
+              }))
+          }));
+        })()),
 
       // Management Actions + Risk & Issues
       e("div",null,
@@ -1876,39 +1926,58 @@ function ExternalCheckpointView(p){
           e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Management Action(s) Required"),
           e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7}},latestReport&&latestReport.decisions?latestReport.decisions:"No action required.")),
         e("div",{className:"card",style:{padding:"16px 20px"}},
-          e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:8}},"Risk & Issue(s)"),
-          openRisks.length>0?openRisks.slice(0,3).map(function(r,i){return e("div",{key:i,style:{fontSize:13,color:"var(--text-secondary)",padding:"4px 0",borderBottom:"1px solid var(--border-light)"}},"• "+r.title)}):
-          e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No open risks."),
-          latestReport&&latestReport.challenges&&e("div",{style:{fontSize:13,color:"#FF9F29",marginTop:8,fontWeight:600}},latestReport.challenges)))),
+          e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:10}},"Risk & Issue(s)"),
+          // Section 1: Active Risks from the Risk Register database (long-lived, persistent risks)
+          e("div",{style:{marginBottom:12}},
+            e("div",{style:{fontSize:10,fontWeight:700,color:"#EF4A00",textTransform:"uppercase",letterSpacing:.5,marginBottom:6}},"Active Risks (Risk Register)"),
+            openRisks.length>0
+              ?openRisks.slice(0,5).map(function(r,i){
+                var lvl=(r.level||"LOW").toUpperCase();
+                var lvlColor=lvl==="HIGH"?"#EF4A00":lvl==="MEDIUM"?"#FF9F29":"#45B369";
+                return e("div",{key:"r"+i,style:{display:"flex",alignItems:"flex-start",gap:6,fontSize:13,color:"var(--text-secondary)",padding:"4px 0",borderBottom:i<Math.min(openRisks.length,5)-1?"1px solid var(--border-light)":"none",lineHeight:1.5}},
+                  e("span",{style:{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:3,background:lvl==="HIGH"?"rgba(239,74,0,.1)":lvl==="MEDIUM"?"rgba(255,159,41,.1)":"rgba(69,179,105,.1)",color:lvlColor,flexShrink:0,marginTop:1}},lvl),
+                  e("span",{style:{flex:1}},r.title))})
+              :e("div",{style:{fontSize:12,color:"var(--text-hint)",fontStyle:"italic"}},"No open risks in the register.")),
+          // Section 2: This Week's Challenges from the weekly report (owner's narrative for the coverage week)
+          latestReport&&latestReport.challenges&&e("div",{style:{paddingTop:10,borderTop:"1px solid var(--border-light)"}},
+            e("div",{style:{fontSize:10,fontWeight:700,color:"#FF9F29",textTransform:"uppercase",letterSpacing:.5,marginBottom:6}},"This Week's Challenges (Weekly Report)"),
+            e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.6,whiteSpace:"pre-wrap"}},latestReport.challenges))))),
 
-    // Row 2: This Week vs Last Week
-    (latestReport||prevReport)&&e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginBottom:16}},
-      e("div",{className:"card",style:{padding:"16px 20px",borderLeft:"4px solid var(--border)"}},
-        e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
-          e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)"}},"Last Week"),
-          prevReport&&e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},fmtF(prevReport.weekStart)+" \u2014 "+fmtF(prevReport.weekEnd))),
-        prevReport?e("div",null,
-          prevReport.summary&&e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,marginBottom:10}},prevReport.summary),
-          prevReport.achievements&&e("div",null,
-            e("div",{style:{fontSize:12,fontWeight:600,color:"#45B369",marginBottom:4}},"Achievements"),
-            e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},prevReport.achievements)),
-          prevReport.nextWeekPlan&&e("div",{style:{marginTop:8}},
-            e("div",{style:{fontSize:12,fontWeight:600,color:"#487FFF",marginBottom:4}},"Planned for This Week"),
-            e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},prevReport.nextWeekPlan))
-        ):e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No previous report.")),
+    // Row 2: This Week (summary/achievements) | Plan for Next Week (nextWeekPlan field)
+    // Both cards come from the SAME latest report — left shows what was accomplished this week,
+    // right shows what's planned for next week (the nextWeekPlan field entered by the project owner).
+    latestReport&&e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginBottom:16}},
+      // LEFT CARD — This Week (current report's summary, achievements, challenges)
       e("div",{className:"card",style:{padding:"16px 20px",borderLeft:"4px solid #487FFF"}},
         e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
           e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)"}},"This Week"),
-          latestReport&&e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},fmtF(latestReport.weekStart)+" \u2014 "+fmtF(latestReport.weekEnd))),
-        latestReport?e("div",null,
+          e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},fmtF(latestReport.weekStart)+" \u2014 "+fmtF(latestReport.weekEnd))),
+        e("div",null,
           latestReport.summary&&e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,marginBottom:10}},latestReport.summary),
           latestReport.achievements&&e("div",null,
-            e("div",{style:{fontSize:12,fontWeight:600,color:"#45B369",marginBottom:4}},"New Achievements"),
+            e("div",{style:{fontSize:12,fontWeight:600,color:"#45B369",marginBottom:4}},"Key Achievements"),
             e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport.achievements)),
           latestReport.challenges&&e("div",{style:{marginTop:8}},
             e("div",{style:{fontSize:12,fontWeight:600,color:"#FF9F29",marginBottom:4}},"Current Challenges"),
-            e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport.challenges))
-        ):e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No report submitted this week."))
+            e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport.challenges)),
+          !latestReport.summary&&!latestReport.achievements&&!latestReport.challenges&&e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No content submitted for this week."))),
+      // RIGHT CARD — Plan for Next Week (same report's nextWeekPlan field)
+      e("div",{className:"card",style:{padding:"16px 20px",borderLeft:"4px solid #8B5CF6"}},
+        e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+          e("div",{style:{fontSize:15,fontWeight:700,color:"var(--text-primary)"}},"Plan for Next Week"),
+          e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},(function(){
+            // Compute next week window: weekEnd + 1 day to weekEnd + 7 days
+            try{
+              var we=new Date(latestReport.weekEnd+"T00:00:00");
+              if(isNaN(we))return"";
+              var ns=new Date(we);ns.setDate(ns.getDate()+1);
+              var ne=new Date(we);ne.setDate(ne.getDate()+7);
+              return fmtF(ns.toISOString().slice(0,10))+" \u2014 "+fmtF(ne.toISOString().slice(0,10));
+            }catch(x){return""}
+          })())),
+        latestReport.nextWeekPlan
+          ?e("div",{style:{fontSize:13,color:"var(--text-secondary)",lineHeight:1.7,whiteSpace:"pre-wrap"}},latestReport.nextWeekPlan)
+          :e("div",{style:{fontSize:13,color:"var(--text-hint)"}},"No plan submitted for next week."))
     ),
 
     // Row 3: Progress Update + Kendala + Tindak Lanjut
