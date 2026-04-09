@@ -5288,8 +5288,16 @@ function UserManagement(p){
             e("td",{style:{padding:"10px 8px",fontSize:12,color:"var(--text-secondary)"}},u.email||"-"),
             e("td",{style:{padding:"10px 8px",fontSize:11,fontFamily:mono,color:"var(--text-tertiary)"}},u.created||"-"),
             e("td",{style:{padding:"10px 8px"}},e("div",{style:{display:"flex",gap:4}},
-              e("button",{className:"edit-icon",style:{width:24,height:24,fontSize:11},onClick:function(){_edit[1](u)}},"\u270F"),
-              e("button",{className:"del-icon",style:{width:24,height:24},onClick:function(){del(u.id)}},"\u2715")))
+              e("button",{className:"edit-icon",style:{width:24,height:24,fontSize:11},onClick:function(){_edit[1](u)},title:"Edit user"},"\u270F"),
+              // Force password reset — hidden for shared guest accounts (would break shared login)
+              u.username!=="guest"&&u.username!=="ext.guest"&&e("button",{className:"edit-icon",style:{width:24,height:24,fontSize:11,background:"rgba(255,159,41,.15)",color:"#FF9F29"},title:"Force password reset on next login",onClick:function(){
+                if(!confirm("Force "+(u.name||u.username)+" to reset their password on next login?"))return;
+                apiPost("updateUser",{mustChangePassword:"true"},u.id).then(function(r){
+                  if(r&&r.ok!==false){showToast((u.name||u.username)+" will be prompted to reset password on next login","success");load()}
+                  else{showToast("Failed to set password reset flag","error")}
+                });
+              }},"\uD83D\uDD11"),
+              e("button",{className:"del-icon",style:{width:24,height:24},onClick:function(){del(u.id)},title:"Delete user"},"\u2715")))
           )}))
       )
     ),
@@ -8549,7 +8557,9 @@ function App(){
   var _showAbout=useState(false);
   var _loginUsername=useState(savedSession?savedSession.username:"");
   var _guestInfo=useState(savedSession?savedSession.guestInfo:null);
-  var _showGuestReg=useState(false);
+  // If the saved session is ext.guest AND they haven't completed the guestbook yet,
+  // force the registration modal to appear on refresh so they can't skip it.
+  var _showGuestReg=useState(savedSession && savedSession.username==="ext.guest" && !savedSession.guestInfo);
   var _showGuestFeedback=useState(false);
   var _feedbackProjectId=useState("");
   var _feedbackProjectName=useState("");
