@@ -348,6 +348,7 @@ function fmtNumInput(n){if(!n&&n!==0)return"";var digits=String(n).replace(/[^0-
 function parseNum(s){return Number(String(s).replace(/[^0-9.-]/g,""))||0}
 function sortByName(arr){if(!Array.isArray(arr))return arr;return arr.slice().sort(function(a,b){var na=String(a&&a.name||"").toLowerCase(),nb=String(b&&b.name||"").toLowerCase();if(!na&&nb)return 1;if(na&&!nb)return -1;if(na<nb)return -1;if(na>nb)return 1;return 0})}
 function fmtF(d){if(!d||typeof d!=="string")return"";var m=String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return"";try{var dt=new Date(d+"T00:00:00");return isNaN(dt.getTime())?"":dt.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}catch(e){return""}}
+function fmtD(dt){if(!dt)return"";if(typeof dt==="string")return dt.slice(0,10);var y=dt.getFullYear(),m=String(dt.getMonth()+1).padStart(2,"0"),d=String(dt.getDate()).padStart(2,"0");return y+"-"+m+"-"+d}
 // Multi-assignee helpers — assignee field can hold multiple comma-separated names.
 // All collaborators are equal — first name in list has no special "owner" status.
 function parseAssignees(s){if(!s||typeof s!=="string")return[];return s.split(",").map(function(n){return n.trim()}).filter(Boolean)}
@@ -891,8 +892,8 @@ function SetupScreen(p){
   }
   return e("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:32}},
     e("div",{style:{maxWidth:500,width:"100%",textAlign:"center",animation:"fadeIn .4s ease"}},
-      e("div",{style:{margin:"0 auto 20px"}},e(HubLogo,{size:64})),
-      e("h1",{style:{fontSize:28,fontWeight:700,marginBottom:4}},"SCCI OneHub"),
+      e("div",{style:{margin:"0 auto 20px"}},e("img",{src:SCCI_LOGO_B64,alt:"SCCI",style:{height:72,objectFit:"contain"}})),
+      e("h1",{style:{fontSize:28,fontWeight:700,marginBottom:4}},"OneHub"),
       e("p",{style:{fontSize:14,color:"var(--text-tertiary)",marginBottom:24}},"Digital Workspace — Connect to your backend to get started"),
       e("p",{style:{fontSize:14,color:"var(--text-secondary)",marginBottom:32}},"Connect to your Google Sheets backend to get started"),
       e("div",{className:"card",style:{padding:32,textAlign:"left"}},
@@ -9077,7 +9078,7 @@ function App(){
     // About modal
     _showAbout[0]&&e("div",{className:"overlay",style:{zIndex:9999},onClick:function(ev){if(ev.target===ev.currentTarget)_showAbout[1](false)}},
       e("div",{className:"modal",style:{maxWidth:380,textAlign:"center",padding:"40px 32px"}},
-        e("div",{style:{margin:"0 auto 16px"}},e(HubLogo,{size:56})),
+        e("div",{style:{margin:"0 auto 16px"}},e("img",{src:SCCI_LOGO_B64,alt:"SCCI",style:{height:60,objectFit:"contain"}})),
         e("h3",{style:{fontSize:18,fontWeight:800,color:"var(--text-primary)",marginBottom:4}},"SCCI OneHub v3.0"),
         e("p",{style:{fontSize:12,color:"var(--text-secondary)",marginBottom:16,lineHeight:1.6}},"Developed by Jemy Mustany \u2014 Powered by AI Technology"),
         e("p",{style:{fontSize:10,color:"var(--text-tertiary)",marginBottom:20}},"All rights reserved."),
