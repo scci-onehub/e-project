@@ -2353,13 +2353,26 @@ function ProjectDetail(p){
   if(_loading[0]||!data||!data.project)return e(Spinner);
 
   var proj=data.project,tasks=data.tasks||[],risks=data.risks||[],riskHist=data.riskHistory||[],budgetItems=data.budgetItems||[],budgetReals=data.budgetRealizations||[],regItems=data.registerItems||[],weeklyReps=data.weeklyReports||[],resources=data.resources||[],stakeholders=data.stakeholders||[],crmDeals=data.crmDeals||[],crmClients=data.crmClients||[],kendala=data.kendala||[],tindakLanjut=data.tindakLanjut||[],project5M=data.project5M;
-  var totalSubs=tasks.length;
-  var doneSubs=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
-  var overall=totalSubs>0?doneSubs/totalSubs*100:0;
-  var completedTasks=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
+  var totalTasks=tasks.length;
+  var doneTasks=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
+  var overall=totalTasks>0?doneTasks/totalTasks*100:0;
+  // Distinct milestones (grouped by t.milestone.name — matches Gantt / ReportsView grouping at line ~1996 / ~2735).
+  // A milestone is counted as "done" only when every task belonging to it is Done.
+  var _mm={};
+  tasks.forEach(function(t){
+    var mn=t.milestone?t.milestone.name:t.name;
+    if(!_mm[mn])_mm[mn]={total:0,done:0};
+    _mm[mn].total++;
+    if((t.taskStatus||"").toLowerCase()==="done")_mm[mn].done++;
+  });
+  var _mKeys=Object.keys(_mm);
+  var totalMilestones=_mKeys.length;
+  var doneMilestones=_mKeys.filter(function(k){return _mm[k].total>0&&_mm[k].done===_mm[k].total}).length;
   var rs=compRS(risks),rl=getRL(rs.pct);
   var variance=computeProjectVariance(tasks).variance;
-  var metrics={overall:overall,ct:completedTasks,tt:tasks.length,ds:doneSubs,ts:totalSubs,variance:variance};
+  // Metrics shape: ct/tt = done/total distinct milestones (used by Overview "Milestones" card).
+  //                ds/ts = done/total tasks (used by Overview "Tasks" card + PrintAllView).
+  var metrics={overall:overall,ct:doneMilestones,tt:totalMilestones,ds:doneTasks,ts:totalTasks,variance:variance};
 
   // ─── Actions ───
   function toggleSub(tid,sid,done){apiPost("updateSubtask",{done:!done},sid).then(load)}
@@ -13014,7 +13027,7 @@ function App(){
         }),
 
         // ── Management Office ── each module = a department in the office ecosystem
-        !isGuest&&!isExtGuest&&(userMods.indexOf("projects")>=0||userMods.indexOf("crm")>=0||userMods.indexOf("operations")>=0||userMods.indexOf("assets")>=0)&&e("li",{className:"sidebar-divider"},t("sb_mgmtOffice")),
+        !isGuest&&!isExtGuest&&(userMods.indexOf("projects")>=0||userMods.indexOf("crm")>=0||userMods.indexOf("operations")>=0||userMods.indexOf("assets")>=0||userMods.indexOf("bd")>=0||userMods.indexOf("risks")>=0||userMods.indexOf("analytics")>=0)&&e("li",{className:"sidebar-divider"},t("sb_mgmtOffice")),
         // Project Management Office (with expandable sub-items)
         !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&e("li",{className:"sidebar-item"},e("button",{onClick:function(){_dashExpand[1](!_dashExpand[0])},style:{fontWeight:600},title:t("sb_projects")},icon("folder-kanban",{size:16})," "+t("sb_pmo_short"),e("span",{style:{marginLeft:"auto",fontSize:10,transition:"transform .2s",transform:_dashExpand[0]?"rotate(180deg)":""}},"\u25BE"))),
         !isGuest&&!isExtGuest&&userMods.indexOf("projects")>=0&&_dashExpand[0]&&hasOverseas&&e("li",{className:"sidebar-item"+(page==="overseas"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("overseas");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},icon("globe",{size:15})," Overseas Projects")),
@@ -13026,9 +13039,9 @@ function App(){
         !isGuest&&userMods.indexOf("crm")>=0&&e("li",{className:"sidebar-item"+(page==="crm"?" active":"")},e("button",{onClick:function(){_page[1]("crm");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("handshake",{size:16})," ",t("sb_crm"))),
         !isGuest&&userMods.indexOf("operations")>=0&&e("li",{className:"sidebar-item"+(page==="operations"?" active":"")},e("button",{onClick:function(){_page[1]("operations");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("briefcase",{size:16})," ",t("sb_operations"))),
         !isGuest&&(userMods.indexOf("assets")>=0||userRole==="admin")&&e("li",{className:"sidebar-item"+(page==="assets"?" active":"")},e("button",{onClick:function(){_page[1]("assets");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("package",{size:16})," ",t("sb_assets"))),
-        !isGuest&&(userMods.indexOf("crm")>=0||userRole==="admin")&&e("li",{className:"sidebar-item"+(page==="bd"?" active":"")},e("button",{onClick:function(){_page[1]("bd");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("target",{size:16})," ",t("sb_bd"))),
+        !isGuest&&(userMods.indexOf("bd")>=0||userRole==="admin")&&e("li",{className:"sidebar-item"+(page==="bd"?" active":"")},e("button",{onClick:function(){_page[1]("bd");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("target",{size:16})," ",t("sb_bd"))),
         // Risk Management — cross-project risk register (restricted to roles that can see risks)
-        !isGuest&&!isExtGuest&&(userMods.indexOf("projects")>=0||userRole==="admin"||userRole==="bod"||userRole==="pmo")&&e("li",{className:"sidebar-item"+(page==="risks"?" active":"")},e("button",{onClick:function(){_page[1]("risks");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("shield-alert",{size:16})," ",t("sb_riskMgmt"))),
+        !isGuest&&!isExtGuest&&(userMods.indexOf("risks")>=0||userRole==="admin"||userRole==="bod"||userRole==="pmo")&&e("li",{className:"sidebar-item"+(page==="risks"?" active":"")},e("button",{onClick:function(){_page[1]("risks");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("shield-alert",{size:16})," ",t("sb_riskMgmt"))),
         !isGuest&&userMods.indexOf("analytics")>=0&&e("li",{className:"sidebar-item"+(page==="analytics"?" active":"")},e("button",{onClick:function(){_page[1]("analytics");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("trending-up",{size:16})," ",t("sb_analytics"))),
 
         // ── Work Space (personal productivity) ──
@@ -13039,9 +13052,9 @@ function App(){
         !isGuest&&userMods.indexOf("workspace")>=0&&_digiExpand[0]&&e("li",{className:"sidebar-item"+(page==="requests"?" active":"")},e("button",{onClick:function(){_page[1]("requests");_selectedProject[1](null);_sidebarOpen[1](false)},style:{paddingLeft:38}},icon("file-text",{size:15})," ",t("sb_requests"))),
 
         // ── Cornersite (company-wide information) ──
-        e("li",{className:"sidebar-divider"},t("sb_cornersite")),
-        e("li",{className:"sidebar-item"+(page==="announcements"?" active":"")},e("button",{onClick:function(){_page[1]("announcements");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("megaphone",{size:16})," ",t("sb_announcements"))),
-        !isGuest&&!isExtGuest&&e("li",{className:"sidebar-item"+(page==="library"?" active":"")},e("button",{onClick:function(){_page[1]("library");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("book-open",{size:16})," ",t("sb_library"))),
+        (userMods.indexOf("announcements")>=0||userMods.indexOf("library")>=0||userMods.indexOf("directory")>=0||userRole==="admin")&&e("li",{className:"sidebar-divider"},t("sb_cornersite")),
+        (userMods.indexOf("announcements")>=0||userRole==="admin")&&e("li",{className:"sidebar-item"+(page==="announcements"?" active":"")},e("button",{onClick:function(){_page[1]("announcements");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("megaphone",{size:16})," ",t("sb_announcements"))),
+        !isGuest&&!isExtGuest&&(userMods.indexOf("library")>=0||userRole==="admin")&&e("li",{className:"sidebar-item"+(page==="library"?" active":"")},e("button",{onClick:function(){_page[1]("library");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("book-open",{size:16})," ",t("sb_library"))),
         !isGuest&&userRole!=="external"&&userMods.indexOf("directory")>=0&&e("li",{className:"sidebar-item"+(page==="directory"?" active":"")},e("button",{onClick:function(){_page[1]("directory");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("contact",{size:16})," ",t("sb_directory"))),
 
         // ── Profile ──
