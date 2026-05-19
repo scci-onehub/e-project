@@ -1136,7 +1136,10 @@ function LoginModal(p){
 // ══════════════════════════════════════════
 function ProjectModal(p){
   var proj=p.project||{};
-  var mob=useMobile();var _n=useState(proj.name||""),_c=useState(proj.client||""),_m=useState(proj.manager||""),_d=useState(proj.description||""),_sd=useState(proj.startDate||new Date().toISOString().slice(0,10)),_ed=useState(proj.endDate||"2026-12-31"),_pp=useState(String((proj.planPct||0))),_st=useState(proj.status||"Active"),_pri=useState(proj.priority||"Medium"),_city=useState(proj.city||""),_prov=useState(proj.province||""),_country=useState(proj.country||""),_cls=useState(proj.classification||"Domestic"),_tpl=useState(!proj.id?"seed":""),_saving=useState(false),_confirmDel=useState(false),_ob=useState(String(proj.overallBudget||"")),_obj=useState(proj.objective||""),_isTpl=useState(proj.isTemplate==="true"||proj.isTemplate===true);
+  // For new projects: default the manager field to the current user when they are a project_owner.
+  // Otherwise the filter at line 12764 hides the project they just created (manager match required).
+  var defaultManager=proj.manager||(!proj.id&&p.userRole==="project_owner"&&p.userName?p.userName:"");
+  var mob=useMobile();var _n=useState(proj.name||""),_c=useState(proj.client||""),_m=useState(defaultManager),_d=useState(proj.description||""),_sd=useState(proj.startDate||new Date().toISOString().slice(0,10)),_ed=useState(proj.endDate||"2026-12-31"),_pp=useState(String((proj.planPct||0))),_st=useState(proj.status||"Active"),_pri=useState(proj.priority||"Medium"),_city=useState(proj.city||""),_prov=useState(proj.province||""),_country=useState(proj.country||""),_cls=useState(proj.classification||"Domestic"),_tpl=useState(!proj.id?"seed":""),_saving=useState(false),_confirmDel=useState(false),_ob=useState(String(proj.overallBudget||"")),_obj=useState(proj.objective||""),_isTpl=useState(proj.isTemplate==="true"||proj.isTemplate===true);
   var _templates=useState([]);
   useEffect(function(){if(!proj.id)apiGet("getProjectTemplates").then(function(d){if(d.ok)_templates[1](d.items||[])})},[]);
   function save(){
@@ -1854,11 +1857,11 @@ function ProjectList(p){
                   // Compact stats row
                   e("div",{style:{display:"flex",gap:6,marginBottom:8}},
                     e("div",{style:{flex:1,background:"rgba(69,179,105,.06)",borderRadius:6,padding:"5px 8px",textAlign:"center"}},
-                      e("span",{style:{fontSize:13,fontWeight:700,fontFamily:mono,color:"#45B369"}},(proj.completedTasks||0)+"/"+(proj.totalTasks||0)),
+                      e("span",{style:{fontSize:13,fontWeight:700,fontFamily:mono,color:"#45B369"}},(proj.doneMilestones||0)+"/"+(proj.totalMilestones||0)),
                       e("span",{style:{fontSize:8,color:"var(--text-secondary)",marginLeft:4}},"mile")),
                     e("div",{style:{flex:1,background:"rgba(72,127,255,.1)",borderRadius:6,padding:"5px 8px",textAlign:"center"}},
-                      e("span",{style:{fontSize:13,fontWeight:700,fontFamily:mono,color:"#487FFF"}},(proj.doneSubs||0)+"/"+(proj.totalSubs||0)),
-                      e("span",{style:{fontSize:8,color:"var(--text-secondary)",marginLeft:4}},"sub")),
+                      e("span",{style:{fontSize:13,fontWeight:700,fontFamily:mono,color:"#487FFF"}},(proj.completedTasks||0)+"/"+(proj.totalTasks||0)),
+                      e("span",{style:{fontSize:8,color:"var(--text-secondary)",marginLeft:4}},"task")),
                     proj.budgetPlan>0&&e("div",{style:{flex:1,background:proj.budgetUtil>90?"rgba(239,74,0,.1)":"rgba(255,159,41,.1)",borderRadius:6,padding:"5px 8px",textAlign:"center"}},
                       e("span",{style:{fontSize:13,fontWeight:700,fontFamily:mono,color:proj.budgetUtil>90?"#EF4A00":"#FF9F29"}},proj.budgetUtil+"%"),
                       e("span",{style:{fontSize:8,color:"var(--text-secondary)",marginLeft:4}},"budget"))),
@@ -1884,7 +1887,7 @@ function ProjectList(p){
         }));
       })(),
 
-    _showAdd[0]&&e(ProjectModal,{project:null,onClose:function(){_showAdd[1](false)},onSaved:p.onRefresh})
+    _showAdd[0]&&e(ProjectModal,{project:null,userName:p.userName,userRole:p.userRole,onClose:function(){_showAdd[1](false)},onSaved:p.onRefresh})
   );
 }
 
@@ -2687,222 +2690,258 @@ function HeatMap5x5(p){
     )
   );
 }
-function ProjOverview(p){var proj=p.proj,tasks=p.tasks,risks=p.risks,m=p.metrics,rl=p.rl,rs=p.rs,bi=p.budgetItems||[],br=p.budgetReals||[],reg=p.regItems||[],crmDeals=p.crmDeals||[],crmClients=p.crmClients||[],project5M=p.project5M,projectId=p.projectId,admin=p.admin,reload=p.reload;var mob=useMobile();
-  var _taskFilter=useState("All");
-  // Use shared variance helper — matches S-Curve exactly, fixes multi-year bug
+
+// ══════════════════════════════════════════════════════════════════════════
+// ProjOverview — Calm, scannable project summary inspired by consumer-app
+// design references (one big number, three supporting facts, one contextual
+// visual, quiet drill-down). Density lives in the other tabs.
+// ══════════════════════════════════════════════════════════════════════════
+function ProjOverview(p){
+  var proj=p.proj,tasks=p.tasks||[],risks=p.risks||[],m=p.metrics,
+      bi=p.budgetItems||[],br=p.budgetReals||[],reg=p.regItems||[],
+      crmDeals=p.crmDeals||[],crmClients=p.crmClients||[],
+      project5M=p.project5M,projectId=p.projectId,admin=p.admin,reload=p.reload;
+  var mob=useMobile();
+
+  // ── Computed metrics ──
   var _pv=computeProjectVariance(tasks);
   var plannedPct=_pv.plannedPct,actualPct=_pv.actualPct,variance=_pv.variance;
-  var totalBudget=bi.reduce(function(a,b){return a+(Number(b.total)||0)},0),totalReal=br.reduce(function(a,b){return a+(Number(b.total)||0)},0);
+  var totalBudget=bi.reduce(function(a,b){return a+(Number(b.total)||0)},0);
+  var totalReal=br.reduce(function(a,b){return a+(Number(b.total)||0)},0);
   var budgetUtil=totalBudget>0?Math.round(totalReal/totalBudget*100):0;
-  var openIssues=reg.filter(function(r){return r.status==="Open"}).length,closedIssues=reg.filter(function(r){return r.status==="Closed"}).length,pendingIssues=reg.filter(function(r){return r.status==="Pending"||r.status==="Awaiting Approval"}).length;
-  // Sort tasks: In progress first, then Not started, then Done
-  var sortedTasks=tasks.slice().sort(function(a,b){var order={"In Progress":0,"In progress":0,"Not Started":1,"Not started":1,"Done":2};return(order[a.status]||1)-(order[b.status]||1)});
-  // Risk heat map counts
-  var riskCats={};risks.forEach(function(r){var c=r.category||"Other";if(!riskCats[c])riskCats[c]={HIGH:0,MEDIUM:0,LOW:0,total:0,open:0};if(r.status==="Open"){riskCats[c][r.level]++;riskCats[c].open++}riskCats[c].total++});
-  function fmtIDR(n){return"IDR "+Number(n).toLocaleString("id-ID",{minimumFractionDigits:2,maximumFractionDigits:2})}
+  var openIssues=reg.filter(function(r){return r.status==="Open"}).length;
+  var openHighRisks=risks.filter(function(r){var s=(r.status||"Open").toLowerCase();return(r.level||"").toUpperCase()==="HIGH"&&s!=="closed"&&s!=="mitigated"}).length;
+  var openRisks=risks.filter(function(r){var s=(r.status||"Open").toLowerCase();return s!=="closed"&&s!=="mitigated"}).length;
 
-  var cm=getCM(),todayPct=(cm+new Date().getDate()/30)/12*100;
-  var gColors=["#1F2937","#487FFF","#45B369","#1CD4C6","#FF9F29","#EF4A00","#45B369"];
+  // Classification → drives the verdict color and headline copy.
+  // Mirrors ExecutiveBrief classifier for consistency.
+  var gap=actualPct-plannedPct;
+  var verdict=(openHighRisks>0||gap<=-15)?"atrisk":(gap<=-5)?"behind":"ontrack";
+  var C_OK="#45B369",C_WARN="#FF9F29",C_BAD="#EF4A00",C_BLUE="#487FFF";
+  var vColor=verdict==="ontrack"?C_OK:verdict==="behind"?C_WARN:C_BAD;
+  var vLabel=verdict==="ontrack"?"On Track":verdict==="behind"?"Behind Plan":"At Risk";
 
-  return e("div",{style:{animation:"fadeIn .3s"}},
-    // ── Row: Overall Completion + Mini Timeline ──
-    e("div",{className:"grid-2",style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:mob?10:16,marginBottom:mob?14:20}},
+  // Distinct milestones — match Gantt grouping (single source of truth).
+  var _mm={};
+  tasks.forEach(function(t){var mn=t.milestone?t.milestone.name:t.name;if(!_mm[mn])_mm[mn]={total:0,done:0,tasks:[]};_mm[mn].total++;_mm[mn].tasks.push(t);if((t.taskStatus||"").toLowerCase()==="done")_mm[mn].done++});
+  var mKeys=Object.keys(_mm);
+  var totMile=mKeys.length;
+  var doneMile=mKeys.filter(function(k){return _mm[k].total>0&&_mm[k].done===_mm[k].total}).length;
+  var totTask=tasks.length;
+  var doneTask=tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
 
-      // Overall Completion card
-      e("div",{className:"card",style:{padding:"24px"}},
-        e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
-          e("span",{style:{fontSize:16,fontWeight:700}},"Overall Completion"),
-          e("div",{style:{display:"flex",gap:12,alignItems:"center"}},
-            e("span",{style:{fontSize:11,fontWeight:600,color:"var(--text-secondary)"}},actualPct+"% of 100%"),
-            e("div",{style:{background:variance>=0?"rgba(69,179,105,.15)":"rgba(239,74,0,.1)",borderRadius:6,padding:"4px 10px",fontFamily:mono,fontWeight:700,fontSize:12,color:variance>=0?"#45B369":"#EF4A00"}},(variance>=0?"+":"")+variance.toFixed(1)+"%"))
-        ),
-        e("div",null,
-          e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:8}},
-            e("span",{style:{fontSize:11,fontWeight:600,color:"#487FFF",width:52}},"Planned"),
-            e("div",{style:{flex:1,height:12,background:"var(--bg-hover)",borderRadius:6,overflow:"hidden"}},e("div",{style:{height:"100%",width:plannedPct+"%",background:"#487FFF",borderRadius:6,transition:"width .5s"}})),
-            e("span",{style:{fontSize:14,fontWeight:700,fontFamily:mono,color:"#487FFF",width:50,textAlign:"right"}},plannedPct+"%")),
-          e("div",{style:{display:"flex",alignItems:"center",gap:10}},
-            e("span",{style:{fontSize:11,fontWeight:600,color:actualPct>=plannedPct?"#45B369":"#FF9F29",width:52}},"Actual"),
-            e("div",{style:{flex:1,height:12,background:"var(--bg-hover)",borderRadius:6,overflow:"hidden"}},e("div",{style:{height:"100%",width:actualPct+"%",background:actualPct>=plannedPct?"#45B369":"#FF9F29",borderRadius:6,transition:"width .5s"}})),
-            e("span",{style:{fontSize:14,fontWeight:700,fontFamily:mono,color:actualPct>=plannedPct?"#45B369":"#FF9F29",width:50,textAlign:"right"}},actualPct+"%"))
-        )
-      ),
+  // Next 3 upcoming milestones (not yet fully done, sorted by earliest end date).
+  var upcoming=mKeys.map(function(k){
+    var mObj=_mm[k];
+    if(mObj.total>0&&mObj.done===mObj.total)return null; // skip fully-done
+    var earliestStart="9999",latestEnd="0000";
+    mObj.tasks.forEach(function(t){
+      var s=t.startDate||(t.milestone&&t.milestone.date)||"";
+      var en=t.endDate||(t.milestone&&t.milestone.date)||"";
+      if(s&&s<earliestStart)earliestStart=s;
+      if(en&&en>latestEnd)latestEnd=en;
+    });
+    var msPct=mObj.total>0?Math.round(mObj.done/mObj.total*100):0;
+    var status=mObj.total===0?"empty":mObj.done>0?"in-progress":"upcoming";
+    return{name:k,start:earliestStart,end:latestEnd,pct:msPct,done:mObj.done,total:mObj.total,status:status};
+  }).filter(Boolean).sort(function(a,b){return(a.end||"z").localeCompare(b.end||"z")}).slice(0,3);
 
-      // Mini Timeline card
-      e("div",{className:"card",style:{padding:"16px 20px",overflow:"hidden"}},
-        e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
-          e("h3",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)"}},"Project Gantt Chart"),
-          e("button",{onClick:function(){p.setTab("Gantt Chart")},style:{fontSize:11,color:"#487FFF",background:"none",border:"none",cursor:"pointer",fontWeight:600}},"Details \u2192")),
-        // Column header + Quarter labels
-        e("div",{style:{display:"flex",marginBottom:2}},
-          e("div",{style:{width:140,fontSize:8,fontWeight:700,color:"var(--text-secondary)",paddingRight:8}},"Milestone"),
-          e("div",{style:{flex:1,display:"flex"}},
-          [{l:"Q1",span:3},{l:"Q2",span:3},{l:"Q3",span:3},{l:"Q4",span:3}].map(function(q,qi){return e("div",{key:qi,style:{flex:q.span,textAlign:"center",fontSize:7,fontWeight:700,color:"var(--text-hint)"}},q.l)}))),
-        // Month headers
-        e("div",{style:{display:"flex",marginBottom:6}},
-          e("div",{style:{width:140}}),
-          e("div",{style:{flex:1,display:"flex"}},
-          MO.map(function(m,i){return e("div",{key:i,style:{flex:1,textAlign:"center",fontSize:8,fontWeight:i===cm?700:400,color:i===cm?"#487FFF":"#9CA3AF"}},m)}))),
-        // Milestone bars (synced with Gantt chart)
-        (function(){
-          var mils=[];var mm={};
-          tasks.forEach(function(t){var mn=t.milestone?t.milestone.name:t.name;if(!mm[mn]){mm[mn]={name:mn,tasks:[]};mils.push(mm[mn])}mm[mn].tasks.push(t)});
-          mils.sort(function(a,b){return(a.tasks[0]&&a.tasks[0].startDate||"z")>(b.tasks[0]&&b.tasks[0].startDate||"z")?1:-1});
-          return mils.map(function(m,mi){
-            var done=m.tasks.filter(function(t){return(t.taskStatus||"").toLowerCase()==="done"}).length;
-            var pct=m.tasks.length>0?Math.round(done/m.tasks.length*100):0;
-            var mSm=12,mEm=0;
-            m.tasks.forEach(function(t){
-              var s=t.startDate?new Date(t.startDate+"T00:00:00").getMonth():12;
-              var en=t.endDate?new Date(t.endDate+"T00:00:00").getMonth():0;
-              if(s<mSm)mSm=s;if(en>mEm)mEm=en;
-            });
-            if(mSm>mEm){mSm=0;mEm=11}
-            return e("div",{key:mi,style:{display:"flex",alignItems:"center",height:24,marginBottom:4}},
-              e("div",{style:{width:140,fontSize:10,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8,color:"var(--text-secondary)"}},m.name),
-              e("div",{style:{flex:1,position:"relative",height:16}},
-                e("div",{style:{position:"absolute",left:todayPct+"%",top:0,bottom:0,width:1,background:"#EF4A00",opacity:.4,zIndex:2}}),
-                e("div",{style:{position:"absolute",left:(mSm/12*100)+"%",width:Math.min((Math.max(mEm-mSm+1,1)/12*100),(100-mSm/12*100))+"%",top:2,height:12,borderRadius:4,background:"var(--bg-hover)",overflow:"hidden"}},
-                  e("div",{style:{height:"100%",width:pct+"%",background:gColors[mi%gColors.length],borderRadius:4}}))))
-          });
-        })(),
-        // Legend
-        e("div",{style:{display:"flex",gap:12,marginTop:8,paddingLeft:140}},
-          e("div",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:8,height:2,background:"#EF4A00"}}),e("span",{style:{fontSize:8,color:"var(--text-tertiary)"}},"Today")),
-          e("div",{style:{display:"flex",alignItems:"center",gap:4}},e("div",{style:{width:8,height:8,borderRadius:2,background:"var(--bg-hover)"}}),e("span",{style:{fontSize:8,color:"var(--text-tertiary)"}},"Duration")))
-      )
+  // 5M collapsed by default
+  var _exp5M=useState(false);
+
+  // ── Headline copy ──
+  function headlineCopy(){
+    var name=proj.name||"This project";
+    if(verdict==="ontrack"){
+      if(gap>=2)return name+" is ahead of plan by "+gap.toFixed(1)+"%. "+doneMile+" of "+totMile+" milestones complete.";
+      return name+" is on track. "+doneMile+" of "+totMile+" milestones complete.";
+    }
+    if(verdict==="behind"){
+      return name+" is "+Math.abs(gap).toFixed(1)+"% behind plan. "+doneMile+" of "+totMile+" milestones complete.";
+    }
+    var bits=[];
+    if(openHighRisks>0)bits.push(openHighRisks+" HIGH risk"+(openHighRisks>1?"s":""));
+    if(gap<=-15)bits.push(Math.abs(gap).toFixed(1)+"% behind plan");
+    return name+" needs attention — "+bits.join(", ")+".";
+  }
+
+  // ── Supporting-fact tile ──
+  function statCard(opts){
+    return e("button",{
+      onClick:opts.onClick||null,
+      style:{
+        flex:1,minWidth:0,
+        padding:mob?"14px 12px":"18px 18px",
+        background:"var(--bg-card)",border:"1px solid var(--border)",
+        borderRadius:10,cursor:opts.onClick?"pointer":"default",
+        textAlign:"left",fontFamily:"inherit",
+        transition:"all .15s ease"
+      },
+      onMouseEnter:opts.onClick?function(ev){ev.currentTarget.style.borderColor=C_BLUE;ev.currentTarget.style.transform="translateY(-1px)"}:null,
+      onMouseLeave:opts.onClick?function(ev){ev.currentTarget.style.borderColor="var(--border)";ev.currentTarget.style.transform="none"}:null
+    },
+      e("div",{style:{fontSize:10,fontWeight:600,color:"var(--text-tertiary)",letterSpacing:".6px",textTransform:"uppercase",marginBottom:7}},opts.label),
+      e("div",{style:{fontSize:mob?22:26,fontWeight:800,fontFamily:mono,color:opts.color||"var(--text-primary)",lineHeight:1}},opts.value),
+      opts.sub&&e("div",{style:{fontSize:10,color:"var(--text-tertiary)",marginTop:6,fontWeight:500}},opts.sub)
+    );
+  }
+
+  return e("div",{style:{animation:"fadeIn .3s",maxWidth:1000,margin:"0 auto"}},
+
+    // ─── Zone 1: The Verdict ──────────────────────────────────────────
+    e("div",{style:{marginBottom:mob?22:32,padding:mob?"4px 2px":"4px 4px"}},
+      e("div",{style:{fontSize:11,fontWeight:600,color:"var(--text-tertiary)",letterSpacing:"1.2px",textTransform:"uppercase",marginBottom:10}},
+        "Overall · ",new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})),
+      e("div",{style:{display:"flex",alignItems:"flex-end",gap:14,flexWrap:"wrap"}},
+        e("div",{style:{fontSize:mob?64:88,fontWeight:800,color:vColor,lineHeight:1,fontFamily:mono,letterSpacing:"-2px"}},
+          actualPct.toFixed(1),
+          e("span",{style:{fontSize:mob?28:36,color:"var(--text-tertiary)",fontWeight:500,marginLeft:4}},"%")),
+        e("div",{style:{paddingBottom:mob?10:14}},
+          e("div",{style:{padding:"4px 12px",borderRadius:50,background:vColor+"18",color:vColor,fontSize:12,fontWeight:700,display:"inline-block"}},vLabel),
+          e("div",{style:{fontSize:11,fontFamily:mono,color:variance>=0?C_OK:C_BAD,marginTop:6,fontWeight:600}},(variance>=0?"\u25B2 +":"\u25BC ")+variance.toFixed(1)+"% vs plan"))),
+      e("div",{style:{fontSize:mob?14:16,color:"var(--text-secondary)",marginTop:14,maxWidth:680,lineHeight:1.55}},headlineCopy())),
+
+    // ─── Zone 2: Four supporting facts ────────────────────────────────
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(4,1fr)",gap:mob?8:12,marginBottom:mob?20:28}},
+      statCard({
+        label:"Milestones",value:doneMile+"/"+totMile,
+        sub:totMile>0?Math.round(doneMile/totMile*100)+"% complete":"none yet",
+        color:doneMile===totMile&&totMile>0?C_OK:"var(--text-primary)",
+        onClick:function(){p.setTab("Tasks & Milestones")}}),
+      statCard({
+        label:"Tasks",value:doneTask+"/"+totTask,
+        sub:totTask>0?Math.round(doneTask/totTask*100)+"% complete":"none yet",
+        color:"var(--text-primary)",
+        onClick:function(){p.setTab("Tasks & Milestones")}}),
+      statCard({
+        label:"Budget",value:totalBudget>0?budgetUtil+"%":"\u2014",
+        sub:totalBudget>0?"IDR "+(totalReal>=1e9?(totalReal/1e9).toFixed(1)+"B":(totalReal/1e6).toFixed(0)+"M")+" of "+(totalBudget>=1e9?(totalBudget/1e9).toFixed(1)+"B":(totalBudget/1e6).toFixed(0)+"M"):"no budget set",
+        color:budgetUtil>90?C_BAD:budgetUtil>75?C_WARN:"var(--text-primary)",
+        onClick:function(){p.setTab("Budget")}}),
+      statCard({
+        label:"Open Risks",value:openRisks,
+        sub:openHighRisks>0?openHighRisks+" HIGH":"none high",
+        color:openHighRisks>0?C_BAD:openRisks>0?C_WARN:C_OK,
+        onClick:function(){p.setTab("Risk Monitor")}})
     ),
 
-    // ── KPI Cards Row (clickable, WowDash style) ──
-    e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(auto-fill,minmax(140px,1fr))",gap:12,marginBottom:20}},
-      [{l:"Progress",v:actualPct+"%",i:"bar-chart-2",c:"#487FFF",bg:"rgba(72,127,255,.08)",t:"Tasks & Milestones"},
-       {l:"Milestones",v:m.ct+"/"+m.tt,i:"",c:m.ct===m.tt?"#45B369":"#FF9F29",bg:m.ct===m.tt?"rgba(69,179,105,.08)":"rgba(255,159,41,.08)",t:"Tasks & Milestones"},
-       {l:"Tasks",v:m.ds+"/"+m.ts,i:"",c:"#487FFF",bg:"rgba(72,127,255,.08)",t:"Tasks & Milestones"},
-       {l:"Risk Level",v:rl.level,i:rl.emoji,c:rl.color,bg:rl.color+"14",t:"Risk Monitor"},
-       {l:"Open Issues",v:openIssues,i:"\u26A0\uFE0F",c:openIssues>0?"#EF4A00":"#45B369",bg:openIssues>0?"rgba(239,74,0,.08)":"rgba(69,179,105,.08)",t:"Issue Logs"},
-       {l:"Budget Util.",v:budgetUtil+"%",i:"coins",c:budgetUtil>90?"#EF4A00":budgetUtil>70?"#FF9F29":"#487FFF",bg:"rgba(72,127,255,.08)",t:"Budget"},
-       {l:"Budget & Resources",v:(p.resources||[]).length,i:"users",c:"#8B5CF6",bg:"rgba(139,92,246,.08)",t:"Budget & Resources"}
-      ].map(function(c,i){return e("div",{key:i,className:"card",onClick:function(){p.setTab(c.t)},style:{padding:"14px 16px",animation:"fadeIn .3s ease "+(i*.05)+"s both",cursor:"pointer",transition:"all .15s"},onMouseEnter:function(ev){ev.currentTarget.style.borderColor="#487FFF";ev.currentTarget.style.transform="translateY(-2px)"},onMouseLeave:function(ev){ev.currentTarget.style.borderColor="var(--border)";ev.currentTarget.style.transform="none"}},
-        e("div",{style:{display:"flex",alignItems:"center",gap:10}},
-          e("div",{style:{width:36,height:36,borderRadius:50,background:c.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},ri(c.i,{size:16,color:c.c||"currentColor"})),
-          e("div",null,e("div",{style:{fontSize:18,fontWeight:700,fontFamily:mono,color:c.c}},c.v),e("div",{style:{fontSize:10,color:"var(--text-secondary)",fontWeight:500}},c.l))))})
+    // ─── Current Issues callout (only when openIssues > 0) ────────────
+    openIssues>0&&e("button",{
+      onClick:function(){p.setTab("Issue Logs")},
+      style:{
+        width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",
+        padding:mob?"12px 14px":"14px 18px",marginBottom:mob?20:28,
+        background:"rgba(255,159,41,.08)",border:"1px solid rgba(255,159,41,.3)",
+        borderLeft:"4px solid "+C_WARN,borderRadius:10,
+        display:"flex",alignItems:"center",gap:12
+      }
+    },
+      e("div",{style:{width:32,height:32,borderRadius:"50%",background:"rgba(255,159,41,.2)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},
+        ri("alert-circle",{size:16,color:C_WARN})),
+      e("div",{style:{flex:1,minWidth:0}},
+        e("div",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)",marginBottom:2}},
+          openIssues+" open issue"+(openIssues>1?"s":"")+" need attention"),
+        e("div",{style:{fontSize:11,color:"var(--text-secondary)"}},
+          "Review the Issue Logs tab for details and resolution status")),
+      e("div",{style:{fontSize:18,color:C_WARN,fontWeight:600}},"\u2192")
     ),
 
-    // ── Row: Budget Plan vs Realization + Issue Status ──
-    e("div",{className:"grid-2",style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:mob?10:16,marginBottom:mob?14:20}},
-      // Budget card
-      e("div",{className:"card",style:{padding:"16px 20px"}},
-        e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
-          e("h3",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)"}},"Budget Plan vs Realization"),
-          e("button",{onClick:function(){p.setTab("Budget")},style:{fontSize:11,color:"#487FFF",background:"none",border:"none",cursor:"pointer",fontWeight:600}},"Details \u2192")),
-        e("div",{style:{display:"flex",gap:16,marginBottom:12}},
-          e("div",{style:{flex:1,textAlign:"center"}},e("div",{style:{fontSize:10,color:"var(--text-secondary)",fontWeight:600,marginBottom:2}},"BUDGET"),e("div",{style:{fontSize:18,fontWeight:700,fontFamily:mono,color:"#487FFF"}},fmtIDR(totalBudget))),
-          e("div",{style:{flex:1,textAlign:"center"}},e("div",{style:{fontSize:10,color:"var(--text-secondary)",fontWeight:600,marginBottom:2}},"REALIZED"),e("div",{style:{fontSize:18,fontWeight:700,fontFamily:mono,color:budgetUtil>90?"#EF4A00":"#45B369"}},fmtIDR(totalReal)))
-        ),
-        e(ProgressBar,{value:budgetUtil,h:10,color:budgetUtil>90?"#EF4A00":budgetUtil>70?"#FF9F29":"#487FFF"}),
-        e("div",{style:{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:11,color:"var(--text-secondary)"}},
-          e("span",null,"Remaining: "+fmtIDR(totalBudget-totalReal)),e("span",null,budgetUtil+"% utilized"))
-      ),
-      // Issue Status card
-      e("div",{className:"card",style:{padding:"16px 20px"}},
-        e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
-          e("h3",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)"}},"Issue Status"),
-          e("button",{onClick:function(){p.setTab("Issue Logs")},style:{fontSize:11,color:"#487FFF",background:"none",border:"none",cursor:"pointer",fontWeight:600}},"View all \u2192")),
-        e("div",{style:{display:"flex",gap:10}},
-          [{l:"Open",v:openIssues,bg:"rgba(255,159,41,.1)",c:"#D97706"},{l:"Pending",v:pendingIssues,bg:"rgba(72,127,255,.1)",c:"#487FFF"},{l:"Closed",v:closedIssues,bg:"rgba(69,179,105,.15)",c:"#45B369"}].map(function(s){
-            return e("div",{key:s.l,style:{flex:1,background:s.bg,borderRadius:10,padding:"14px 10px",textAlign:"center"}},
-              e("div",{style:{fontSize:22,fontWeight:700,fontFamily:mono,color:s.c}},s.v),
-              e("div",{style:{fontSize:10,fontWeight:600,color:s.c,marginTop:2}},s.l))})
-        ),
-        reg.length>0&&e("div",{style:{marginTop:12}},e(ProgressBar,{value:reg.length>0?Math.round(closedIssues/reg.length*100):0,h:6,color:"#45B369"}),
-          e("div",{style:{fontSize:10,color:"var(--text-secondary)",marginTop:4,textAlign:"right"}},Math.round(closedIssues/Math.max(reg.length,1)*100)+"% resolved"))
-      )
-    ),
-
-    // ── Row: Task Progress (sorted) + Risk Heat Map ──
-    e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16}},
-      // Task Progress sorted with filter
-      e("div",{className:"card",style:{padding:"16px 20px",maxHeight:360,display:"flex",flexDirection:"column"}},
-        e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:8}},
-          e("h3",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)"}},"Task Progress"),
-          e("button",{onClick:function(){p.setTab("Tasks & Milestones")},style:{fontSize:11,color:"#487FFF",background:"none",border:"none",cursor:"pointer",fontWeight:600}},"Edit \u2192")),
-        // Filter toggles
-        e("div",{style:{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}},
-          ["All","In Progress","Not Started","Done"].map(function(f){
-            var cnt=f==="All"?sortedTasks.length:sortedTasks.filter(function(t){var st=(t.taskStatus||t.status||"").toLowerCase();return f==="In Progress"?st==="in progress":f==="Not Started"?st==="not started":st==="done"}).length;
-            return e("button",{key:f,style:{padding:"4px 10px",borderRadius:6,border:"1px solid "+(f===_taskFilter[0]?"#487FFF":"var(--border)"),background:f===_taskFilter[0]?"rgba(72,127,255,.1)":"#fff",color:f===_taskFilter[0]?"#487FFF":"#6B7280",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit"},onClick:function(){_taskFilter[1](f)}},f+" ("+cnt+")")})),
-        // Filtered tasks (scrollable)
-        e("div",{style:{flex:1,overflowY:"auto",minHeight:0}},
-        (function(){var filtered=_taskFilter[0]==="All"?sortedTasks:sortedTasks.filter(function(t){var st=(t.taskStatus||t.status||"").toLowerCase();return _taskFilter[0]==="In Progress"?st==="in progress":_taskFilter[0]==="Not Started"?st==="not started":st==="done"});
-          return filtered.length===0?e("div",{style:{textAlign:"center",padding:16,color:"var(--text-tertiary)",fontSize:12}},"No tasks with this status"):
-          filtered.map(function(t){var pr=tprog(t);return e("div",{key:t.id,style:{marginBottom:8}},
-          e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}},
-            e("div",{style:{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0}},
-              e(Badge,{bg:(t.taskStatus||t.status)==="Done"?"rgba(69,179,105,.15)":(t.taskStatus||t.status)==="In Progress"?"rgba(255,159,41,.1)":"var(--border-light)",color:sc(t.taskStatus||t.status)},t.taskStatus||t.status),
-              e("span",{style:{fontSize:11,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},t.name)),
-            e("span",{style:{fontSize:11,fontWeight:700,fontFamily:mono,color:sc(t.taskStatus||t.status),flexShrink:0,marginLeft:8}},pr+"%")),
-          e(ProgressBar,{value:pr,h:4,color:sc(t.taskStatus||t.status)}))})})())
-      ),
-      // Risk Heat Map 5x5
-      e("div",{className:"card",style:{padding:"16px 20px",display:"flex",flexDirection:"column"}},
-        e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
-          e("h3",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)"}},"Risk Heat Map"),
-          e("button",{onClick:function(){p.setTab("Risk Monitor")},style:{fontSize:11,color:"#487FFF",background:"none",border:"none",cursor:"pointer",fontWeight:600}},"Monitor \u2192")),
-        risks.filter(function(r){return r.status==="Open"}).length===0?e("div",{style:{textAlign:"center",padding:"24px",color:"var(--text-tertiary)",fontSize:13,flex:1,display:"flex",alignItems:"center",justifyContent:"center"}},"No open risks"):
-        e("div",{style:{flex:1}},e(HeatMap5x5,{risks:risks,compact:true}))
-      )
-    ),
-
-    // ── 5M Fish Diagram ──
-    e("div",{style:{marginTop:16}},
-      e(FishDiagram5M,{data:project5M||{},projectName:proj.name,objective:proj.objective,admin:admin,onSave:function(d5m){d5m.projectId=projectId;apiPost("saveProject5M",d5m).then(reload)}})),
-
-    // ── CRM Integration Section ──
-    (crmDeals.length>0||crmClients.length>0)&&e("div",{style:{marginTop:16}},
-      e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16}},
-        // Linked CRM Deals
-        e("div",{className:"card",style:{padding:"16px 20px"}},
-          e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
-            e("h3",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)"}},"\uD83D\uDD17 Linked CRM Deals"),
-            e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},crmDeals.length+" deal"+(crmDeals.length!==1?"s":""))),
-          crmDeals.length===0?e("div",{style:{textAlign:"center",padding:20,color:"var(--text-hint)",fontSize:12}},"No CRM deals linked to this project"):
-          e("div",null,
-            // Deal revenue summary
-            function(){var paid=crmDeals.filter(function(d){return d.status==="Paid"}),pipeV=crmDeals.filter(function(d){return d.status!=="Paid"&&d.status!=="Rejected"}).reduce(function(a,d){return a+(Number(d.amount)||0)},0),paidV=paid.reduce(function(a,d){return a+(Number(d.amount)||0)},0);
-              return e("div",{style:{display:"flex",gap:12,marginBottom:12}},
-                e("div",{style:{flex:1,padding:"10px 12px",background:"rgba(69,179,105,.08)",borderRadius:8,textAlign:"center"}},
-                  e("div",{style:{fontSize:16,fontWeight:800,fontFamily:mono,color:"#45B369"}},paidV>=1e9?"Rp "+(paidV/1e9).toFixed(1)+"B":paidV>=1e6?"Rp "+(paidV/1e6).toFixed(0)+"M":"Rp "+paidV.toLocaleString("id-ID",{minimumFractionDigits:2,maximumFractionDigits:2})),
-                  e("div",{style:{fontSize:9,fontWeight:600,color:"#45B369"}},"Revenue (Paid)")),
-                pipeV>0&&e("div",{style:{flex:1,padding:"10px 12px",background:"rgba(72,127,255,.08)",borderRadius:8,textAlign:"center"}},
-                  e("div",{style:{fontSize:16,fontWeight:800,fontFamily:mono,color:"#487FFF"}},pipeV>=1e9?"Rp "+(pipeV/1e9).toFixed(1)+"B":pipeV>=1e6?"Rp "+(pipeV/1e6).toFixed(0)+"M":"Rp "+pipeV.toLocaleString("id-ID",{minimumFractionDigits:2,maximumFractionDigits:2})),
-                  e("div",{style:{fontSize:9,fontWeight:600,color:"#487FFF"}},"Pipeline")))}(),
-            crmDeals.map(function(d){
-              var stC2={Prospect:"#487FFF",Negotiation:"#8B5CF6",Pending:"#FF9F29",Paid:"#45B369",Rejected:"#EF4A00"};
-              return e("div",{key:d.id,style:{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid var(--border-light)"}},
-                e("span",{style:{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:50,background:(stC2[d.status]||"#9CA3AF")+"18",color:stC2[d.status]||"#9CA3AF"}},d.status),
+    // ─── Zone 3: Next Milestones ──────────────────────────────────────
+    e("div",{style:{marginBottom:mob?20:28}},
+      e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}},
+        e("div",{style:{fontSize:mob?15:17,fontWeight:700,color:"var(--text-primary)"}},"Next Milestones"),
+        e("button",{onClick:function(){p.setTab("Gantt Chart")},style:{background:"none",border:"none",color:C_BLUE,fontSize:12,fontWeight:600,cursor:"pointer",padding:0,fontFamily:"inherit"}},"View full Gantt \u2192")),
+      upcoming.length===0
+        ? e("div",{style:{padding:"30px 20px",textAlign:"center",color:"var(--text-tertiary)",fontSize:13,background:"var(--bg-card)",border:"1px dashed var(--border)",borderRadius:10}},
+            totMile===0?"No milestones defined yet.":"All milestones complete. \uD83C\uDF89")
+        : e("div",{style:{display:"grid",gap:8}},
+            upcoming.map(function(ms,i){
+              var msColor=ms.status==="in-progress"?C_BLUE:"var(--text-tertiary)";
+              var fmtDate=ms.end&&ms.end!=="0000"?new Date(ms.end+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"\u2014";
+              var daysUntil=null;
+              if(ms.end&&ms.end!=="0000"){
+                daysUntil=Math.round((new Date(ms.end+"T00:00:00")-new Date())/86400000);
+              }
+              return e("button",{
+                key:ms.name,
+                onClick:function(){p.setTab("Gantt Chart")},
+                style:{
+                  width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",
+                  padding:mob?"12px 14px":"14px 18px",
+                  background:"var(--bg-card)",border:"1px solid var(--border)",
+                  borderLeft:"3px solid "+msColor,borderRadius:10,
+                  display:"flex",alignItems:"center",gap:14
+                },
+                onMouseEnter:function(ev){ev.currentTarget.style.transform="translateY(-1px)";ev.currentTarget.style.boxShadow="0 2px 10px rgba(0,0,0,.05)"},
+                onMouseLeave:function(ev){ev.currentTarget.style.transform="none";ev.currentTarget.style.boxShadow="none"}
+              },
+                e("div",{style:{width:28,height:28,borderRadius:"50%",background:msColor+"15",color:msColor,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,fontFamily:mono}},i+1),
                 e("div",{style:{flex:1,minWidth:0}},
-                  e("div",{style:{fontSize:12,fontWeight:600}},d.client||d.project||"Deal"),
-                  e("div",{style:{fontSize:10,color:"var(--text-tertiary)"}},d.service+(d.rep?" \u00B7 "+d.rep:""))),
-                e("span",{style:{fontFamily:mono,fontWeight:700,fontSize:12}},Number(d.amount)>=1e9?"Rp "+(Number(d.amount)/1e9).toFixed(1)+"B":"Rp "+(Number(d.amount)/1e6).toFixed(0)+"M"))
-            }))),
+                  e("div",{style:{fontSize:mob?13:14,fontWeight:700,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:3}},ms.name),
+                  e("div",{style:{fontSize:11,color:"var(--text-tertiary)"}},
+                    ms.done+"/"+ms.total+" tasks done \u00b7 "+ms.pct+"%")),
+                e("div",{style:{textAlign:"right",flexShrink:0}},
+                  e("div",{style:{fontSize:12,fontWeight:700,fontFamily:mono,color:"var(--text-primary)"}},fmtDate),
+                  daysUntil!==null&&e("div",{style:{fontSize:10,color:daysUntil<0?C_BAD:daysUntil<=7?C_WARN:"var(--text-tertiary)",fontWeight:600,marginTop:2}},
+                    daysUntil<0?Math.abs(daysUntil)+"d overdue":daysUntil===0?"today":"in "+daysUntil+"d"))
+              )
+            }))
+    ),
 
-        // Matched CRM Clients (from stakeholders)
-        e("div",{className:"card",style:{padding:"16px 20px"}},
-          e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
-            e("h3",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)"}},"\uD83D\uDC65 CRM-Linked Contacts"),
-            e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},crmClients.length+" match"+(crmClients.length!==1?"es":""))),
-          crmClients.length===0?e("div",{style:{textAlign:"center",padding:20,color:"var(--text-hint)",fontSize:12}},"No stakeholders match CRM clients"):
-          crmClients.map(function(c){
-            var stC3=c.status==="Active"?"#45B369":c.status==="Lead"?"#487FFF":"#9CA3AF";
-            return e("div",{key:c.id,style:{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid var(--border-light)"}},
-              e(Avatar,{name:c.name,size:32,fontSize:11}),
-              e("div",{style:{flex:1,minWidth:0}},
-                e("div",{style:{fontSize:12,fontWeight:600}},c.name),
-                e("div",{style:{fontSize:10,color:"var(--text-tertiary)"}},(c.company||"")+(c.industry?" \u00B7 "+c.industry:""))),
-              e("div",{style:{textAlign:"right"}},
-                e("span",{style:{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:4,background:stC3+"18",color:stC3}},c.status||"Active"),
-                c.email&&e("div",{style:{fontSize:9,color:"#487FFF",marginTop:2}},c.email)))
-          }))))
+    // ─── Zone 4: Quiet drill-downs ────────────────────────────────────
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(4,1fr)",gap:mob?8:12,marginBottom:mob?20:28}},
+      [
+        {label:"All Tasks & Milestones",ic:"check-square",t:"Tasks & Milestones"},
+        {label:"S-Curve Analysis",ic:"trending-up",t:"S-Curve"},
+        {label:"Budget & Resources",ic:"banknote",t:"Budget"},
+        {label:"Risk Monitor",ic:"shield",t:"Risk Monitor"}
+      ].map(function(d,i){
+        return e("button",{key:i,onClick:function(){p.setTab(d.t)},style:{
+          padding:mob?"12px 10px":"14px 16px",background:"var(--bg-card)",
+          border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",
+          textAlign:"left",fontFamily:"inherit",
+          display:"flex",alignItems:"center",gap:10,transition:"all .15s ease"
+        },
+        onMouseEnter:function(ev){ev.currentTarget.style.borderColor=C_BLUE;ev.currentTarget.style.transform="translateY(-1px)"},
+        onMouseLeave:function(ev){ev.currentTarget.style.borderColor="var(--border)";ev.currentTarget.style.transform="none"}
+        },
+          ri(d.ic,{size:14,color:C_BLUE}),
+          e("span",{style:{fontSize:11,fontWeight:600,color:"var(--text-primary)",flex:1}},d.label),
+          e("span",{style:{color:C_BLUE,fontSize:14}},"\u2192"))
+      })),
+
+    // ─── Collapsible: 5M Analysis ─────────────────────────────────────
+    e("div",{className:"card",style:{marginBottom:16,overflow:"hidden"}},
+      e("button",{onClick:function(){_exp5M[1](!_exp5M[0])},style:{
+        width:"100%",padding:"14px 18px",background:"none",border:"none",cursor:"pointer",
+        display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit"
+      }},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          ri(_exp5M[0]?"chevron-down":"chevron-right",{size:14,color:"var(--text-secondary)"}),
+          e("span",{style:{fontSize:13,fontWeight:700,color:"var(--text-primary)"}},"5M Analysis (Man \u00b7 Machine \u00b7 Material \u00b7 Method \u00b7 Money)"),
+          e("span",{style:{fontSize:10,color:"var(--text-tertiary)"}},"fishbone diagram")),
+        e("span",{style:{fontSize:10,color:"var(--text-tertiary)"}},_exp5M[0]?"Collapse":"Expand")),
+      _exp5M[0]&&e("div",{style:{borderTop:"1px solid var(--border)",padding:"16px"}},
+        e(FishDiagram5M,{data:project5M||{},projectName:proj.name,objective:proj.objective,admin:admin,onSave:function(d5m){d5m.projectId=projectId;apiPost("saveProject5M",d5m).then(reload)}}))),
+
+    // ─── CRM Integration (only shown when present) ────────────────────
+    (crmDeals.length>0||crmClients.length>0)&&e("div",{style:{marginTop:16,display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16}},
+      crmDeals.length>0&&e("div",{className:"card",style:{padding:"16px 20px"}},
+        e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
+          e("h3",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)"}},"\uD83D\uDD17 Linked CRM Deals"),
+          e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},crmDeals.length+" deal"+(crmDeals.length!==1?"s":""))),
+        crmDeals.slice(0,5).map(function(d){return e("div",{key:d.id,style:{padding:"8px 0",borderBottom:"1px solid var(--border-light)"}},
+          e("div",{style:{fontSize:12,fontWeight:600}},d.title||d.name||d.id),
+          e("div",{style:{fontSize:10,color:"var(--text-tertiary)",marginTop:2}},(d.stage||"")+(d.value?" \u00b7 IDR "+Number(d.value).toLocaleString("id-ID"):"")))})),
+      crmClients.length>0&&e("div",{className:"card",style:{padding:"16px 20px"}},
+        e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
+          e("h3",{style:{fontSize:14,fontWeight:600,color:"var(--text-primary)"}},"\uD83D\uDC65 Linked Clients"),
+          e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},crmClients.length+" client"+(crmClients.length!==1?"s":""))),
+        crmClients.slice(0,5).map(function(c){return e("div",{key:c.id,style:{padding:"8px 0",borderBottom:"1px solid var(--border-light)"}},
+          e("div",{style:{fontSize:12,fontWeight:600}},c.name||c.id),
+          e("div",{style:{fontSize:10,color:"var(--text-tertiary)",marginTop:2}},c.industry||""))}))
+    )
+
   );
 }
 
@@ -10272,7 +10311,11 @@ function AssetManagementPage(p){
   var _assets=useState([]),_serviceLogs=useState([]),_utilization=useState([]),_offices=useState([]),_loading=useState(true),_saving=useState(false);
   var _tab=useState("dashboard");
   var _showAsset=useState(false),_editAsset=useState(null),_showService=useState(false),_editService=useState(null),_showUtil=useState(false);
-  var _search=useState(""),_catF=useState("All"),_statusF=useState("All"),_locF=useState("All"),_condF=useState("All");
+  var _search=useState(""),_catF=useState("All"),_statusF=useState("All"),_locF=useState("All"),_condF=useState("All"),_branchF=useState("All"),_depF=useState("All");
+  var _depExp=useState(false); // Depreciation Overview card collapsed by default on dashboard
+  var _healthF=useState("All"); // "All" | "NeedsAttn" (<50)
+  var _healthSort=useState(false); // when true, sort register by health ascending (worst first)
+  var _calF=useState("All"); // "All" | "Overdue" | "ExpiringSoon" | "Never" | "Valid" | "NotRequired"
   var _detailAsset=useState(null); // for detail/service-log drawer
   var _showDelete=useState(null);
   // Utilization heatmap state
@@ -10310,130 +10353,8 @@ function AssetManagementPage(p){
   var UTIL_TYPES=["Sample Analysis","Sample Preparation","Calibration Run","Quality Control","Training","Client Demo","Maintenance Test","Other"];
   var MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  // ─── WORKFLOW MODULES (Procurement / Transfers / Service Orders) ───
-  // In-memory mock data with 4-step approval (Branch → Ops GM → BOD → Admin → operational stages)
-  var PROC_STAGES=["Requested","Branch Approved","Ops GM Approved","BOD Approved","Admin Approved","PO Issued","Received","Commissioned"];
-  var TRF_STAGES=["Requested","From-Branch Approved","To-Branch Approved","Ops GM Approved","BOD Approved","In Transit","Received","Closed"];
-  var SVO_STAGES=["Reported","Branch Approved","Ops GM Approved","BOD Approved","Admin Approved","Scheduled","In Service","Awaiting Parts","Completed","Closed"];
-  var WF_C={"Requested":"#9CA3AF","Reported":"#9CA3AF","Branch Approved":"#8B5CF6","From-Branch Approved":"#8B5CF6","To-Branch Approved":"#A78BFA","Ops GM Approved":"#06B6D4","BOD Approved":"#4F46E5","Admin Approved":"#487FFF","PO Issued":"#FF9F29","In Transit":"#FF9F29","Scheduled":"#FF9F29","In Service":"#487FFF","Awaiting Parts":"#EF4A00","Received":"#1CD4C6","Commissioned":"#45B369","Completed":"#45B369","Closed":"#45B369","Rejected":"#EF4A00"};
-  var APPROVAL_CHAIN={
-    proc:[
-      {stage:"Branch Approved",label:"Branch Head",approverField:"branchApprover",dateField:"branchApprovedDate",actor:"Branch Head"},
-      {stage:"Ops GM Approved",label:"Operations GM",approverField:"opsGmApprover",dateField:"opsGmApprovedDate",actor:"Operations GM"},
-      {stage:"BOD Approved",label:"BOD",approverField:"bodApprover",dateField:"bodApprovedDate",actor:"BOD Member"},
-      {stage:"Admin Approved",label:"Admin",approverField:"adminApprover",dateField:"adminApprovedDate",actor:"Admin"}
-    ],
-    trf:[
-      {stage:"From-Branch Approved",label:"From-Branch Head",approverField:"fromApprover",dateField:"fromApprovedDate",actor:"From-Branch Head"},
-      {stage:"To-Branch Approved",label:"To-Branch Head",approverField:"toApprover",dateField:"toApprovedDate",actor:"To-Branch Head"},
-      {stage:"Ops GM Approved",label:"Operations GM",approverField:"opsGmApprover",dateField:"opsGmApprovedDate",actor:"Operations GM"},
-      {stage:"BOD Approved",label:"BOD",approverField:"bodApprover",dateField:"bodApprovedDate",actor:"BOD Member"}
-    ],
-    svo:[
-      {stage:"Branch Approved",label:"Branch Head",approverField:"branchApprover",dateField:"branchApprovedDate",actor:"Branch Head"},
-      {stage:"Ops GM Approved",label:"Operations GM",approverField:"opsGmApprover",dateField:"opsGmApprovedDate",actor:"Operations GM"},
-      {stage:"BOD Approved",label:"BOD",approverField:"bodApprover",dateField:"bodApprovedDate",actor:"BOD Member"},
-      {stage:"Admin Approved",label:"Admin",approverField:"adminApprover",dateField:"adminApprovedDate",actor:"Admin"}
-    ]
-  };
-  var PROC_TRIGGERS=["New Operation","Depreciation Replacement","New Service Line","Breakdown Replacement","User Request"];
-  var TRF_REASONS=["Utilization","Temporary Project","Permanent Reassignment","Repair Return"];
-  var SVO_TYPES_WF=["Calibration","Preventive Maintenance","Corrective Maintenance","Repair","Inspection"];
-  var PRIORITIES=["Low","Medium","High","Critical"];
-  var PRIO_C={Low:"#9CA3AF",Medium:"#487FFF",High:"#FF9F29",Critical:"#EF4A00"};
 
-  var _proc=useState([]),_trf=useState([]),_svo=useState([]);
-  var _wfDetail=useState(null);
-  var _wfStatusF=useState("All"),_wfShowAdd=useState(null);
-  var _wfSeeded=useRef(false);
-
-  // No mock data — workflows load from backend when endpoints are ready
-  useEffect(function(){
-    if(_wfSeeded.current)return;
-    _wfSeeded.current=true;
-    _proc[1]([]);_trf[1]([]);_svo[1]([]);
-  },[_assets[0]]);
-
-  // Workflow helpers
-  function wfData(kind){return kind==="proc"?_proc[0]:kind==="trf"?_trf[0]:_svo[0]}
-  function wfSet(kind,arr){return kind==="proc"?_proc[1](arr):kind==="trf"?_trf[1](arr):_svo[1](arr)}
-  function wfStages(kind){return kind==="proc"?PROC_STAGES:kind==="trf"?TRF_STAGES:SVO_STAGES}
-  function wfLabel(kind){return kind==="proc"?"Procurement":kind==="trf"?"Transfer":"Service Order"}
-  function wfPrefix(kind){return kind==="proc"?"PRO":kind==="trf"?"TRF":"SVO"}
-  function wfTitleField(kind){return kind==="proc"?"itemName":"assetName"}
-  function wfUpdate(kind,id,patch,tlEntry){
-    var arr=wfData(kind).map(function(x){
-      if(x.id!==id)return x;
-      var nu=Object.assign({},x,patch);
-      if(tlEntry){nu.timeline=(x.timeline||[]).concat([Object.assign({date:fmtD(new Date())},tlEntry)])}
-      return nu;
-    });
-    wfSet(kind,arr);
-    if(_wfDetail[0]&&_wfDetail[0].kind===kind&&_wfDetail[0].item.id===id){
-      _wfDetail[1]({kind:kind,item:arr.filter(function(x){return x.id===id})[0]})
-    }
-  }
-  function wfNextId(kind){
-    var arr=wfData(kind);var pf=wfPrefix(kind);var yr=new Date().getFullYear();
-    var nums=arr.map(function(x){var m=String(x.id||"").match(/(\d+)$/);return m?Number(m[1]):0});
-    var n=(nums.length?Math.max.apply(null,nums):0)+1;
-    return pf+"-"+yr+"-"+String(n).padStart(3,"0");
-  }
-  function wfActions(kind,item){
-    var s=item.status;var acts=[];
-    var chain=APPROVAL_CHAIN[kind]||[];
-    var initial=(kind==="svo"?"Reported":"Requested");
-    var idx=-1;
-    if(s!==initial){for(var i=0;i<chain.length;i++){if(chain[i].stage===s){idx=i;break}}}
-    var inChain=(s===initial)||(idx>=0);
-    if(inChain&&idx<chain.length-1){
-      var next=chain[idx+1];
-      var nextColor=WF_C[next.stage]||"#487FFF";
-      acts.push({label:"Approve as "+next.label,color:nextColor,icon:idx+1===chain.length-1?"check-check":"check",act:function(){
-        var patch={status:next.stage};
-        patch[next.approverField]=next.actor+" (demo)";
-        patch[next.dateField]=fmtD(new Date());
-        wfUpdate(kind,item.id,patch,{action:next.stage,actor:next.actor+" (demo)"});
-        showToast(wfLabel(kind)+" approved by "+next.label,"success")
-      }});
-      acts.push({label:"Reject",color:"#EF4A00",icon:"x",act:function(){
-        var r=prompt("Rejection reason:");if(!r)return;
-        wfUpdate(kind,item.id,{status:"Rejected",rejectionReason:r},{action:"Rejected",actor:next.actor+" (demo)",note:r});
-        showToast(wfLabel(kind)+" rejected","error")
-      }});
-    }
-    else if(idx===chain.length-1){
-      if(kind==="proc"){acts.push({label:"Issue PO",color:"#FF9F29",icon:"file-text",act:function(){var po=prompt("PO Number:","PO-"+new Date().getFullYear()+"-"+Math.floor(1000+Math.random()*9000));if(po){wfUpdate(kind,item.id,{status:"PO Issued",poNumber:po,poDate:fmtD(new Date())},{action:"PO Issued",actor:"Procurement",note:po});showToast("PO issued","success")}}})}
-      else if(kind==="trf"){acts.push({label:"Mark In Transit",color:"#FF9F29",icon:"truck",act:function(){wfUpdate(kind,item.id,{status:"In Transit",shippedDate:fmtD(new Date())},{action:"In Transit",actor:"Logistics"});showToast("Marked in transit","success")}})}
-      else{acts.push({label:"Schedule Service",color:"#FF9F29",icon:"calendar",act:function(){var sd=prompt("Scheduled date (YYYY-MM-DD):",fmtD(new Date()));if(sd){wfUpdate(kind,item.id,{status:"Scheduled",scheduledDate:sd},{action:"Scheduled",actor:"Maintenance",note:"Scheduled "+sd});showToast("Service scheduled","success")}}})}
-    }
-    else if(s==="PO Issued"){
-      acts.push({label:"Mark Received",color:"#1CD4C6",icon:"package-check",act:function(){wfUpdate(kind,item.id,{status:"Received",receivedDate:fmtD(new Date())},{action:"Received",actor:"Receiving Dock"});showToast("Marked received","success")}})
-    } else if(s==="In Transit"){
-      acts.push({label:"Mark Received at Destination",color:"#1CD4C6",icon:"package-check",act:function(){wfUpdate(kind,item.id,{status:"Received",receivedDate:fmtD(new Date())},{action:"Received",actor:"Destination Custodian"});showToast("Marked received","success")}})
-    } else if(s==="Received"&&kind==="proc"){
-      acts.push({label:"Commission & Register Asset",color:"#45B369",icon:"check-circle",act:function(){wfUpdate(kind,item.id,{status:"Commissioned",commissionedDate:fmtD(new Date())},{action:"Commissioned",actor:"Asset Manager",note:"Asset registered"});showToast("Commissioned & added to register","success")}})
-    } else if(s==="Received"&&kind==="trf"){
-      acts.push({label:"Close Transfer",color:"#45B369",icon:"check-circle",act:function(){wfUpdate(kind,item.id,{status:"Closed",actualReturnDate:item.expectedReturnDate?fmtD(new Date()):null},{action:"Closed",actor:"PMO"});showToast("Transfer closed","success")}})
-    } else if(s==="Scheduled"){
-      acts.push({label:"Start Service",color:"#487FFF",icon:"play",act:function(){wfUpdate(kind,item.id,{status:"In Service",startDate:fmtD(new Date())},{action:"In Service",actor:"Service Tech"});showToast("Service started","success")}})
-    } else if(s==="In Service"){
-      acts.push({label:"Mark Awaiting Parts",color:"#EF4A00",icon:"clock",act:function(){var pn=prompt("Parts needed:");if(pn){wfUpdate(kind,item.id,{status:"Awaiting Parts",partsNeeded:pn},{action:"Awaiting Parts",actor:"Service Tech",note:pn});showToast("Awaiting parts","info")}}});
-      acts.push({label:"Complete Service",color:"#45B369",icon:"check-circle",act:function(){wfUpdate(kind,item.id,{status:"Completed",completionDate:fmtD(new Date())},{action:"Completed",actor:"Service Tech"});showToast("Service completed","success")}})
-    } else if(s==="Awaiting Parts"){
-      acts.push({label:"Resume Service",color:"#487FFF",icon:"play",act:function(){wfUpdate(kind,item.id,{status:"In Service"},{action:"In Service",actor:"Service Tech",note:"Parts arrived, resumed"});showToast("Service resumed","success")}})
-    } else if(s==="Completed"){
-      acts.push({label:"Close Order",color:"#45B369",icon:"archive",act:function(){wfUpdate(kind,item.id,{status:"Closed",closedDate:fmtD(new Date())},{action:"Closed",actor:"PMO"});showToast("Service order closed","success")}})
-    }
-    return acts;
-  }
-  function daysInStatus(item){
-    var tl=item.timeline||[];if(!tl.length)return 0;
-    var last=tl[tl.length-1];var d=new Date(last.date+"T00:00:00");
-    return Math.max(0,Math.floor((Date.now()-d.getTime())/86400000))
-  }
-
-  var tabs=[{k:"dashboard",l:"Dashboard",ic:"bar-chart-2"},{k:"register",l:"Asset Register",ic:"clipboard-list"},{k:"procurement",l:"Procurement",ic:"shopping-cart"},{k:"transfers",l:"Transfers",ic:"truck"},{k:"svcorders",l:"Service Orders",ic:"clipboard-check"},{k:"utilization",l:"Utilization",ic:"activity"},{k:"service",l:"Service & Calibration",ic:"wrench"},{k:"insights",l:"Insights",ic:"trending-up"}];
+  var tabs=[{k:"dashboard",l:"Dashboard",ic:"bar-chart-2"},{k:"register",l:"Asset Register",ic:"clipboard-list"},{k:"utilization",l:"Utilization",ic:"activity"},{k:"service",l:"Service & Calibration",ic:"wrench"},{k:"insights",l:"Insights",ic:"trending-up"}];
 
   // Cache key + 5-minute TTL. Refresh button bypasses cache.
   var ASSET_CACHE_KEY="scci_asset_cache_v1";
@@ -10551,6 +10472,75 @@ function AssetManagementPage(p){
     return{lastDate:last.date,nextDue:last.nextDueDate,overdue:last.nextDueDate<todayStr}}
   function assetCode(a){return a.assetCode||("AST-"+String(a.id||"").slice(-4).toUpperCase())}
 
+  // ── Calibration Status (Item 3) ──
+  // Returns {status, nextDue, daysToNext, lastDone, requiresCal, color, label}.
+  // status ∈ {Valid, ExpiringSoon, Overdue, Never, NotRequired}.
+  // Threshold: 30 days (hard-coded v1, per scope doc).
+  var LAB_CATS=["Peralatan Operasi dan Laboratorium","Peralatan Laboratorium"];
+  function calcCalibrationStatus(a){
+    // Prefer explicit asset.requiresCalibration; fall back to category detection
+    // for backwards-compat with rows that haven't been migrated yet.
+    var reqCal=(a.requiresCalibration===true||a.requiresCalibration===false)
+      ?a.requiresCalibration
+      :(LAB_CATS.indexOf(a.kategori)>=0);
+    if(!reqCal){return{status:"NotRequired",nextDue:null,daysToNext:null,lastDone:null,requiresCal:false,color:"#9CA3AF",label:"N/A"}}
+    var calLogs=getAssetLogs(a.id).filter(function(l){return l.type==="Calibration"&&l.nextDueDate});
+    if(calLogs.length===0){return{status:"Never",nextDue:null,daysToNext:null,lastDone:null,requiresCal:true,color:"#FF9F29",label:"Never calibrated"}}
+    var last=calLogs[0]; // getAssetLogs sorts DESC by date
+    var daysToNext=Math.floor((new Date(last.nextDueDate+"T00:00:00")-today)/86400000);
+    var status,color,label;
+    if(daysToNext<0){status="Overdue";color="#EF4A00";label="Overdue by "+Math.abs(daysToNext)+"d"}
+    else if(daysToNext<=30){status="ExpiringSoon";color="#FF9F29";label="Expires in "+daysToNext+"d"}
+    else{status="Valid";color="#45B369";label="Valid"}
+    return{status:status,nextDue:last.nextDueDate,daysToNext:daysToNext,lastDone:last.date,requiresCal:true,color:color,label:label};
+  }
+
+  // ── Asset Health Score (Item 4) ──
+  // Composite 0-100 score: 40×age + 30×condition + 20×calibration + 10×breakdown.
+  // Each sub-score is 0-1. Condition "Hilang" forces overall=0.
+  // New assets (<90 days) get breakdownScore=0.8 to avoid a misleading "perfect health" signal.
+  function calcHealthScore(a){
+    // Condition override: Hilang = lost/stolen = zero
+    if(a.condition==="Hilang")return{score:0,band:"critical",age:0,cond:0,cal:0,brk:0,hilang:true};
+
+    // Age sub-score (0-1): fresher than useful life = closer to 1
+    var ageYrs=a.purchaseDate?calcAge(a.purchaseDate).years+calcAge(a.purchaseDate).months/12:0;
+    var useful=Number(a.usefulLife)||USEFUL_LIFE[a.kategori]||5;
+    var ageScore=a.purchaseDate?Math.max(0,Math.min(1,1-ageYrs/useful)):0.7;
+
+    // Condition sub-score
+    var condMap={"Baik":1.0,"Dalam Perbaikan":0.5,"Tidak Digunakan":0.3,"Rusak":0,"Hilang":0};
+    var condScore=condMap[a.condition]!==undefined?condMap[a.condition]:0.7;
+
+    // Calibration sub-score — reuses calcCalibrationStatus for single source of truth
+    var cs=calcCalibrationStatus(a);
+    var calScore;
+    if(cs.status==="NotRequired")calScore=1.0;
+    else if(cs.status==="Never")calScore=0.3;
+    else if(cs.status==="Overdue")calScore=0.1;
+    else if(cs.status==="ExpiringSoon")calScore=0.6;
+    else calScore=1.0; // Valid
+
+    // Breakdown sub-score — repair count in last 12 months
+    var yrAgoStr=(function(){var d=new Date(today.getTime()-365*86400000);return d.toISOString().slice(0,10)})();
+    var repairs12mo=getAssetLogs(a.id).filter(function(l){
+      return(l.type==="Corrective Maintenance"||l.type==="Repair")&&l.date&&l.date>=yrAgoStr
+    }).length;
+    var brkScore;
+    if(a.purchaseDate&&calcAge(a.purchaseDate).totalDays<90){
+      brkScore=0.8; // New asset — no data ≠ perfect; give neutral
+    }else{
+      brkScore=Math.max(0,1-repairs12mo/3);
+    }
+
+    var score=Math.round(40*ageScore+30*condScore+20*calScore+10*brkScore);
+    var band=score>=75?"good":score>=50?"fair":score>=25?"poor":"critical";
+    return{score:score,band:band,age:ageScore,cond:condScore,cal:calScore,brk:brkScore,requiresCal:cs.requiresCal,repairs12mo:repairs12mo};
+  }
+  // Color + label per health band
+  var HEALTH_C={good:"#45B369",fair:"#FF9F29",poor:"#EF4A00",critical:"#7F1D1D"};
+  var HEALTH_L={good:"Good",fair:"Fair",poor:"Poor",critical:"Critical"};
+
   // ── KPI Computations ──
   var totalAssets=assets.length;
   var totalValue=assets.reduce(function(a,x){return a+(Number(x.purchasePrice)||0)},0);
@@ -10568,10 +10558,16 @@ function AssetManagementPage(p){
     var _branch=useState(a.branch||""),_purchDate=useState(a.purchaseDate||fmtD(new Date())),_purchPrice=useState(a.purchasePrice?String(a.purchasePrice):""),_poNum=useState(a.poNumber||"");
     var _usefulLife=useState(a.usefulLife?String(a.usefulLife):String(USEFUL_LIFE[a.kategori||CATEGORIES[0]]||5));
     var _cond=useState(a.condition||"Baik"),_loc=useState(a.location||""),_assignee=useState(a.assignedTo||""),_status=useState(a.status||"Active"),_notes=useState(a.notes||"");
+    // Calibration-required flag. For new assets, default from category (lab cats = true);
+    // for existing assets, honor persisted value (but fall back to category default if undefined).
+    var _reqCal=useState(function(){
+      if(a.requiresCalibration===true||a.requiresCalibration===false)return a.requiresCalibration;
+      return LAB_CATS.indexOf(a.kategori||CATEGORIES[0])>=0;
+    }());
     // Cascading jenis options based on selected kategori
     var jenisOpts=(JENIS_MAP[_kat[0]]||["Lain-lain"]);
     function save(){if(!_name[0].trim()){showToast("Asset name is required","error");return}_saving[1](true);
-      var payload={name:_name[0],assetCode:_code[0],kategori:_kat[0],jenisAset:_jenis[0],turunanJenis:_turunan[0],brand:_brand[0],specs:_specs[0],branch:_branch[0],purchaseDate:_purchDate[0],purchasePrice:parseNum(_purchPrice[0]),poNumber:_poNum[0],usefulLife:Number(_usefulLife[0])||USEFUL_LIFE[_kat[0]]||5,condition:_cond[0],location:_loc[0],assignedTo:_assignee[0],status:_status[0],notes:_notes[0]};
+      var payload={name:_name[0],assetCode:_code[0],kategori:_kat[0],jenisAset:_jenis[0],turunanJenis:_turunan[0],brand:_brand[0],specs:_specs[0],branch:_branch[0],purchaseDate:_purchDate[0],purchasePrice:parseNum(_purchPrice[0]),poNumber:_poNum[0],usefulLife:Number(_usefulLife[0])||USEFUL_LIFE[_kat[0]]||5,condition:_cond[0],location:_loc[0],assignedTo:_assignee[0],status:_status[0],notes:_notes[0],requiresCalibration:_reqCal[0]};
       apiPostT(isEdit?"updateAsset":"addAsset",payload,isEdit?a.id:undefined,isEdit?"Asset updated":"Asset added").then(function(d){if(d.ok){load(true);pp.onClose()}}).finally(function(){_saving[1](false)})}
     return e(Modal,{show:true,onClose:pp.onClose,style:{maxWidth:720,maxHeight:"90vh",overflowY:"auto"}},
       e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:16,display:"flex",alignItems:"center",gap:8}},ri("package",{size:18,color:"#487FFF"}),isEdit?"Edit Asset":"Add New Asset"),
@@ -10583,7 +10579,7 @@ function AssetManagementPage(p){
           ["SCCI-HO","SCCI-BJB","SCCI-SMD","SCCI-PLG","SCCI-KDI","SCCI-MRT","SCCI-BDG","SCCI-BRU","SCCI-CLG","SCCI-VNM"].map(function(b){return e("option",{key:b,value:b},b)})))),
       // Row 2: 3-tier classification (cascading)
       e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:12,marginBottom:12,padding:12,background:"var(--bg-surface)",borderRadius:8}},
-        e("div",null,e("label",{className:"label",style:{color:"#487FFF"}},"Kategori Aset"),e("select",{className:"select",value:_kat[0],onChange:function(ev){_kat[1](ev.target.value);_jenis[1]("");_turunan[1]("");_usefulLife[1](String(USEFUL_LIFE[ev.target.value]||5))}},CATEGORIES.map(function(c){return e("option",{key:c,value:c},c)}))),
+        e("div",null,e("label",{className:"label",style:{color:"#487FFF"}},"Kategori Aset"),e("select",{className:"select",value:_kat[0],onChange:function(ev){_kat[1](ev.target.value);_jenis[1]("");_turunan[1]("");_usefulLife[1](String(USEFUL_LIFE[ev.target.value]||5));_reqCal[1](LAB_CATS.indexOf(ev.target.value)>=0)}},CATEGORIES.map(function(c){return e("option",{key:c,value:c},c)}))),
         e("div",null,e("label",{className:"label",style:{color:"#487FFF"}},"Jenis Aset"),e("select",{className:"select",value:_jenis[0],onChange:function(ev){_jenis[1](ev.target.value)}},e("option",{value:""},"Select..."),jenisOpts.map(function(j){return e("option",{key:j,value:j},j)}))),
         e("div",null,e("label",{className:"label",style:{color:"#487FFF"}},"Turunan Jenis"),e("input",{className:"input",value:_turunan[0],onChange:function(ev){_turunan[1](ev.target.value)},placeholder:"e.g. Laptop, PC, Calorimeter"}))),
       // Row 3: Brand, Specs
@@ -10602,6 +10598,11 @@ function AssetManagementPage(p){
         e("div",null,e("label",{className:"label"},"Status"),e("select",{className:"select",value:_status[0],onChange:function(ev){_status[1](ev.target.value)}},STATUSES.map(function(s){return e("option",{key:s,value:s},s)}))),
         e("div",null,e("label",{className:"label"},"Kondisi"),e("select",{className:"select",value:_cond[0],onChange:function(ev){_cond[1](ev.target.value)}},CONDITIONS.map(function(s){return e("option",{key:s,value:s},s)}))),
         e("div",null,e("label",{className:"label"},"Umur Manfaat (th)"),e("input",{type:"number",className:"input",value:_usefulLife[0],onChange:function(ev){_usefulLife[1](ev.target.value)},min:1,max:50}))),
+      // Row 5b: Requires Calibration toggle
+      e("div",{style:{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--bg-surface)",borderRadius:8,marginBottom:12,border:"1px dashed var(--border-light)"}},
+        e("input",{type:"checkbox",id:"reqCalCbx",checked:_reqCal[0],onChange:function(ev){_reqCal[1](ev.target.checked)},style:{width:16,height:16,cursor:"pointer"}}),
+        e("label",{htmlFor:"reqCalCbx",style:{fontSize:12,fontWeight:600,color:"var(--text-primary)",cursor:"pointer",flex:1}},"Requires Calibration",
+          e("div",{style:{fontSize:10,color:"var(--text-tertiary)",fontWeight:400,marginTop:2}},"If enabled, this asset will be tracked for calibration due dates in the dashboard and register. Default-on for lab equipment."))),
       // Notes
       e("label",{className:"label"},"Keterangan"),
       e("textarea",{className:"input",value:_notes[0],onChange:function(ev){_notes[1](ev.target.value)},rows:2,style:{marginBottom:12,resize:"vertical"}}),
@@ -10671,6 +10672,7 @@ function AssetManagementPage(p){
     var totalHrs=assetUtils.reduce(function(s,u){return s+(Number(u.hours)||0)},0);
     var totalSamples=assetUtils.reduce(function(s,u){return s+(Number(u.samplesProcessed)||0)},0);
     var nc=getNextCalibration(a);
+    var cs=calcCalibrationStatus(a);
     return e(Modal,{show:true,onClose:pp.onClose,style:{maxWidth:700,maxHeight:"90vh",overflowY:"auto"}},
       // Header
       e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}},
@@ -10681,6 +10683,17 @@ function AssetManagementPage(p){
         e("div",{style:{display:"flex",gap:6}},
           e("span",{style:{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,background:(STATUS_C[a.status]||"#9CA3AF")+"18",color:STATUS_C[a.status]||"#9CA3AF"}},a.status),
           e("span",{style:{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,background:(COND_C[a.condition]||"#9CA3AF")+"18",color:COND_C[a.condition]||"#9CA3AF"}},a.condition))),
+      // Calibration banner — prominently shown when Overdue or ExpiringSoon (Item 3)
+      (cs.status==="Overdue"||cs.status==="ExpiringSoon")&&e("div",{style:{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",marginBottom:16,background:cs.color+"15",border:"1px solid "+cs.color+"55",borderRadius:8,borderLeft:"4px solid "+cs.color}},
+        e("div",{style:{width:36,height:36,borderRadius:"50%",background:cs.color+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},ri(cs.status==="Overdue"?"alert-triangle":"calendar-clock",{size:18,color:cs.color})),
+        e("div",{style:{flex:1,minWidth:0}},
+          e("div",{style:{fontSize:13,fontWeight:700,color:cs.color,marginBottom:2}},
+            cs.status==="Overdue"?"Calibration Overdue":"Calibration Expiring Soon"),
+          e("div",{style:{fontSize:11,color:"var(--text-secondary)"}},
+            cs.status==="Overdue"
+              ?"Next calibration was due on "+fmtF(cs.nextDue)+" \u2014 "+Math.abs(cs.daysToNext)+" day"+(Math.abs(cs.daysToNext)!==1?"s":"")+" ago. Schedule immediately."
+              :"Next calibration due on "+fmtF(cs.nextDue)+" \u2014 in "+cs.daysToNext+" day"+(cs.daysToNext!==1?"s":"")+". Plan now to avoid an overdue state.")),
+        admin&&e("button",{className:"btn btn-primary btn-sm",onClick:function(){_editService[1](null);_showService[1](a.id)}},ri("plus",{size:12})," Log Cal")),
       // Info grid
       e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}},
         [{l:"Age",v:age.label,ic:"clock",c:"#487FFF"},{l:"Book Value",v:fmtC(dep.bookValue),ic:"coins",c:"#45B369"},{l:"Total Hours",v:totalHrs.toFixed(1)+"h",ic:"activity",c:"#8B5CF6"},
@@ -10698,6 +10711,32 @@ function AssetManagementPage(p){
           e("div",{style:{height:"100%",width:dep.pct+"%",background:dep.pct>=80?"#EF4A00":dep.pct>=50?"#FF9F29":"#45B369",borderRadius:4,transition:"width .5s"}})),
         e("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-tertiary)",marginTop:4}},
           e("span",null,"Purchase: "+fmtC(Number(a.purchasePrice)||0)),e("span",null,"Book: "+fmtC(dep.bookValue)),e("span",null,"Salvage: "+fmtC(Number(a.salvageValue)||0)))),
+      // Health Breakdown (Item 4)
+      (function(){
+        var hs=calcHealthScore(a);
+        var bars=[
+          {l:"Age (40%)",v:hs.age,note:a.purchaseDate?calcAge(a.purchaseDate).label+" of "+(Number(a.usefulLife)||USEFUL_LIFE[a.kategori]||5)+"y useful life":"No purchase date"},
+          {l:"Condition (30%)",v:hs.cond,note:a.condition+(a.condition==="Hilang"?" — forces score to 0":"")},
+          {l:"Calibration (20%)",v:hs.cal,note:hs.requiresCal?(hs.cal===1?"Valid":hs.cal===0.6?"Expiring ≤30d":hs.cal===0.1?"Overdue":"Never calibrated"):"Not required for this category"},
+          {l:"Breakdown (10%)",v:hs.brk,note:(a.purchaseDate&&calcAge(a.purchaseDate).totalDays<90)?"New asset — neutral score":hs.repairs12mo+" repair"+(hs.repairs12mo!==1?"s":"")+" in last 12 months"}
+        ];
+        return e("div",{style:{padding:12,background:"var(--bg-surface)",borderRadius:8,marginBottom:16,borderLeft:"4px solid "+HEALTH_C[hs.band]}},
+          e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
+            e("div",{style:{display:"flex",alignItems:"center",gap:8}},
+              ri("heart-pulse",{size:14,color:HEALTH_C[hs.band]}),
+              e("span",{style:{fontWeight:700,fontSize:13,color:"var(--text-primary)"}},"Health Score")),
+            e("div",{style:{display:"flex",alignItems:"baseline",gap:6}},
+              e("span",{style:{fontSize:22,fontWeight:800,fontFamily:mono,color:HEALTH_C[hs.band]}},hs.score),
+              e("span",{style:{fontSize:10,color:HEALTH_C[hs.band],fontWeight:700,textTransform:"uppercase",letterSpacing:.5}},HEALTH_L[hs.band]))),
+          bars.map(function(b,i){var pct=Math.round(b.v*100);return e("div",{key:i,style:{marginBottom:8}},
+            e("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}},
+              e("span",{style:{fontWeight:600,color:"var(--text-secondary)"}},b.l),
+              e("span",{style:{fontFamily:mono,fontWeight:700,color:pct>=75?"#45B369":pct>=50?"#FF9F29":"#EF4A00"}},pct+"%")),
+            e("div",{style:{height:5,background:"var(--bg-hover)",borderRadius:3,overflow:"hidden"}},
+              e("div",{style:{height:"100%",width:pct+"%",background:pct>=75?"#45B369":pct>=50?"#FF9F29":"#EF4A00",borderRadius:3}})),
+            b.note&&e("div",{style:{fontSize:9,color:"var(--text-tertiary)",marginTop:2}},b.note))}),
+          hs.hilang&&e("div",{style:{fontSize:10,color:"#EF4A00",fontWeight:700,marginTop:6,padding:"6px 8px",background:"rgba(239,74,0,.08)",borderRadius:4}},"\u26A0 Condition = Hilang. Overall score forced to 0."));
+      })(),
       // Specifications
       a.specifications&&e("div",{style:{padding:12,background:"var(--bg-surface)",borderRadius:8,marginBottom:16}},
         e("div",{style:{fontSize:11,fontWeight:700,color:"#487FFF",marginBottom:6}},"Specifications"),
@@ -10784,6 +10823,16 @@ function AssetManagementPage(p){
     var top10=assets.slice().sort(function(a,b){return(Number(b.purchasePrice)||0)-(Number(a.purchasePrice)||0)}).slice(0,10);
     // Upcoming calibrations
     var upcoming=assets.map(function(a){var nc=getNextCalibration(a);return nc?{asset:a,nextDue:nc.nextDue,overdue:nc.overdue}:null}).filter(Boolean).sort(function(a,b){return(a.nextDue||"").localeCompare(b.nextDue||"")}).slice(0,8);
+    // Calibration status counts (Item 3) — for KPI strip and upcoming card sub-groups
+    var calStats={Valid:0,ExpiringSoon:0,Overdue:0,Never:0,NotRequired:0};
+    var expThisMonth=0;
+    // End of current month for "Expiring This Month" cutoff
+    var monthEndStr=(function(){var d=new Date(today.getFullYear(),today.getMonth()+1,0);return d.toISOString().slice(0,10)})();
+    assets.forEach(function(a){
+      var cs=calcCalibrationStatus(a);
+      calStats[cs.status]=(calStats[cs.status]||0)+1;
+      if(cs.requiresCal&&cs.nextDue&&cs.nextDue>=todayStr&&cs.nextDue<=monthEndStr)expThisMonth++;
+    });
     // Mini donut SVG
     function miniDonut(data,size){
       var total=data.reduce(function(s,d){return s+d.v},0)||1;var r=size/2-4,cx=size/2,cy=size/2,startAngle=-Math.PI/2;
@@ -10855,10 +10904,18 @@ function AssetManagementPage(p){
               e("div",{style:{textAlign:"right"}},e("a",{href:"#",onClick:function(ev){ev.preventDefault();_tab[1]("service")},style:{fontSize:11,color:"#487FFF",textDecoration:"none",fontWeight:600}},"View →"),e("div",{style:{fontSize:10,color:"var(--text-secondary)",marginTop:4}},"Cost: "+fmtC(svcCost))))),
           e("div",{style:{padding:"8px 18px"}},
             [{l:"Pass",v:svcPass,c:"#45B369"},{l:"Adjusted",v:svcAdj,c:"#FF9F29"},{l:"Fail",v:svcFail,c:"#EF4A00"}].map(function(r,i){var pctR=svcTotal>0?Math.round(r.v/svcTotal*100):0;return e("div",{key:r.l,style:{marginBottom:i<2?8:0}},e("div",{style:{display:"flex",alignItems:"center",fontSize:11,marginBottom:2}},e("span",{style:{flex:1,fontWeight:600}},r.l),e("span",{style:{fontFamily:mono,fontWeight:700}},r.v),e("span",{style:{fontSize:9,color:"var(--text-tertiary)",fontFamily:mono,marginLeft:6,minWidth:28,textAlign:"right"}},pctR+"%")),e("div",{style:{height:4,background:"var(--bg-hover)",borderRadius:3,overflow:"hidden"}},e("div",{style:{height:"100%",width:pctR+"%",background:r.c,borderRadius:3}})))})))),
-      // ═══ ROW 1: KPI Strip (6 cards) ═══
-      e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(6,1fr)",gap:12,marginBottom:20}},
-        [{v:totalAssets,l:"Total Assets",ic:"package",c:"#487FFF"},{v:fmtC(totalValue),l:"Acquisition Value",ic:"banknote",c:"#325434",sm:true},{v:fmtC(totalBookValue),l:"Book Value",ic:"wallet",c:"#8B5CF6",sm:true},{v:fullyDep,l:"Fully Depreciated",ic:"alert-circle",c:fullyDep>totalAssets*0.5?"#EF4A00":"#FF9F29",sub:Math.round(fullyDep/Math.max(1,totalAssets)*100)+"%"},{v:condCounts["Rusak"]||0,l:"Kondisi Rusak",ic:"x-circle",c:(condCounts["Rusak"]||0)>0?"#EF4A00":"#45B369"},{v:brSorted.length,l:"Branches",ic:"map-pin",c:"#487FFF"}
-        ].map(function(s,i){return e("div",{key:i,className:"card",style:{padding:"14px 16px"}},
+      // ═══ ROW 1: KPI Strip ═══
+      e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:20}},
+        [{v:totalAssets,l:"Total Assets",ic:"package",c:"#487FFF"},
+         {v:fmtC(totalValue),l:"Acquisition Value",ic:"banknote",c:"#325434",sm:true},
+         {v:fmtC(totalBookValue),l:"Book Value",ic:"wallet",c:"#8B5CF6",sm:true},
+         {v:fullyDep,l:"Fully Depreciated",ic:"alert-circle",c:fullyDep>totalAssets*0.5?"#EF4A00":"#FF9F29",sub:Math.round(fullyDep/Math.max(1,totalAssets)*100)+"%"},
+         {v:condCounts["Rusak"]||0,l:"Kondisi Rusak",ic:"x-circle",c:(condCounts["Rusak"]||0)>0?"#EF4A00":"#45B369"},
+         {v:brSorted.length,l:"Branches",ic:"map-pin",c:"#487FFF"},
+         // Calibration KPIs — clickable, jump to Register with filter applied
+         {v:calStats.Overdue,l:"Cal. Overdue",ic:"alert-triangle",c:calStats.Overdue>0?"#EF4A00":"#45B369",onClick:function(){_tab[1]("register");_calF[1]("Overdue")}},
+         {v:expThisMonth,l:"Expiring This Month",ic:"calendar-clock",c:expThisMonth>0?"#FF9F29":"#45B369",onClick:function(){_tab[1]("register");_calF[1]("ExpiringSoon")}}
+        ].map(function(s,i){return e("div",{key:i,className:"card",style:{padding:"14px 16px",cursor:s.onClick?"pointer":"default",transition:"all .15s"},onClick:s.onClick||null,onMouseEnter:s.onClick?function(ev){ev.currentTarget.style.borderColor=s.c;ev.currentTarget.style.transform="translateY(-1px)"}:null,onMouseLeave:s.onClick?function(ev){ev.currentTarget.style.borderColor="var(--border)";ev.currentTarget.style.transform="none"}:null,title:s.onClick?"Click to filter Register":null},
           e("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
             e("div",{style:{width:30,height:30,borderRadius:6,background:s.c+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},ri(s.ic,{size:14,color:s.c})),
             e("div",{style:{fontSize:9,fontWeight:600,color:"var(--text-tertiary)",textTransform:"uppercase",letterSpacing:".5px"}},s.l)),
@@ -10896,15 +10953,33 @@ function AssetManagementPage(p){
           e("div",{className:"card-body",style:{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap",justifyContent:"center"}},
             miniDonut(stSorted.map(function(s){return{l:s,v:stCounts[s],c:STATUS_C[s]||"#CBD5E1"}}),130),
             e("div",null,stSorted.map(function(s){var pct=Math.round(stCounts[s]/Math.max(1,totalAssets)*100);return e("div",{key:s,style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:11}},e("div",{style:{width:10,height:10,borderRadius:3,background:STATUS_C[s]||"#CBD5E1",flexShrink:0}}),e("span",{style:{flex:1,minWidth:80,color:"var(--text-secondary)"}},s),e("span",{style:{fontFamily:mono,fontWeight:700}},stCounts[s]),e("span",{style:{fontSize:9,color:"var(--text-tertiary)",fontFamily:mono,marginLeft:4}},pct+"%"))}))))),
-      // ROW 4: Depreciation + Top 10
-      e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16,marginBottom:20}},
-        e("div",{className:"card"},e("div",{className:"card-header"},e("span",{className:"card-title"},"Depreciation Overview")),
-          e("div",{className:"card-body"},
-            [{l:"Fully Depreciated (BV = 0)",v:fullyDep,val:fullyDepVal,c:"#EF4A00"},{l:"Depreciating",v:depreciating,val:depreciatingVal,c:"#FF9F29"},{l:"New (< 1 year)",v:newAssets,val:newVal,c:"#45B369"},{l:"No Value Data",v:unknownDep,val:0,c:"#CBD5E1"}].map(function(seg){var pct=Math.round(seg.v/Math.max(1,totalAssets)*100);return e("div",{key:seg.l,style:{marginBottom:12}},e("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:4}},e("span",{style:{fontWeight:600,color:"var(--text-secondary)"}},seg.l),e("div",{style:{display:"flex",gap:8}},e("span",{style:{fontFamily:mono,fontWeight:700,color:seg.c}},seg.v),e("span",{style:{fontSize:9,color:"var(--text-tertiary)",fontFamily:mono}},pct+"%"))),e("div",{style:{height:8,background:"var(--bg-hover)",borderRadius:4,overflow:"hidden"}},e("div",{style:{height:"100%",width:pct+"%",background:seg.c,borderRadius:4}})),seg.val>0&&e("div",{style:{fontSize:9,color:"var(--text-tertiary)",marginTop:2,textAlign:"right"}},fmtC(seg.val)))}))),
-        e("div",{className:"card"},e("div",{className:"card-header"},e("span",{className:"card-title"},"Top 10 Highest Value Assets")),
-          e("div",{className:"card-body",style:{maxHeight:300,overflowY:"auto"}},
-            top10.map(function(a,i){var pp=Number(a.purchasePrice)||0;var bv=Number(a.bookValue)||0;var depPct=pp>0?Math.round((1-bv/pp)*100):0;return e("div",{key:a.id,style:{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:"1px solid var(--border-light)",cursor:"pointer"},onClick:function(){_detailAsset[1](a)}},e("span",{style:{fontSize:10,fontWeight:700,color:"var(--text-hint)",minWidth:18}},i+1+"."),e("div",{style:{flex:1,minWidth:0}},e("div",{style:{fontSize:11,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},a.name),e("div",{style:{fontSize:9,color:"var(--text-tertiary)"}},(a.branch||"")+(a.jenisAset?" \u00B7 "+a.jenisAset:""))),e("div",{style:{textAlign:"right",minWidth:90}},e("div",{style:{fontSize:11,fontFamily:mono,fontWeight:700}},fmtC(pp)),e("div",{style:{fontSize:9,color:depPct>=80?"#EF4A00":"var(--text-tertiary)",fontFamily:mono}},"Dep: "+depPct+"%")))}),
-            top10.length===0&&e("div",{style:{textAlign:"center",padding:24,color:"var(--text-tertiary)"}},"No assets")))),
+      // ROW 4: Top 10 by Value + Bottom 5 by Health
+      (function(){
+        // Compute bottom 5 by health; exclude assets with no purchase date (health is noisy/unreliable there)
+        var healthRanked=assets.filter(function(a){return a.purchaseDate}).map(function(a){return{a:a,hs:calcHealthScore(a)}}).sort(function(x,y){return x.hs.score-y.hs.score});
+        var bottom5=healthRanked.slice(0,5);
+        return e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16,marginBottom:20}},
+          // Top 10 by value
+          e("div",{className:"card"},e("div",{className:"card-header"},e("span",{className:"card-title"},"Top 10 Highest Value Assets")),
+            e("div",{className:"card-body",style:{maxHeight:300,overflowY:"auto"}},
+              top10.map(function(a,i){var pp=Number(a.purchasePrice)||0;var bv=Number(a.bookValue)||0;var depPct=pp>0?Math.round((1-bv/pp)*100):0;return e("div",{key:a.id,style:{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:"1px solid var(--border-light)",cursor:"pointer"},onClick:function(){_detailAsset[1](a)}},e("span",{style:{fontSize:10,fontWeight:700,color:"var(--text-hint)",minWidth:18}},i+1+"."),e("div",{style:{flex:1,minWidth:0}},e("div",{style:{fontSize:11,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},a.name),e("div",{style:{fontSize:9,color:"var(--text-tertiary)"}},(a.branch||"")+(a.jenisAset?" \u00B7 "+a.jenisAset:""))),e("div",{style:{textAlign:"right",minWidth:90}},e("div",{style:{fontSize:11,fontFamily:mono,fontWeight:700}},fmtC(pp)),e("div",{style:{fontSize:9,color:depPct>=80?"#EF4A00":"var(--text-tertiary)",fontFamily:mono}},"Dep: "+depPct+"%")))}),
+              top10.length===0&&e("div",{style:{textAlign:"center",padding:24,color:"var(--text-tertiary)"}},"No assets"))),
+          // Bottom 5 by Health — the opposite signal: what needs attention
+          e("div",{className:"card"},
+            e("div",{className:"card-header",style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+              e("span",{className:"card-title",style:{display:"flex",alignItems:"center",gap:6}},ri("alert-triangle",{size:14,color:"#EF4A00"})," Bottom 5 by Health"),
+              e("button",{className:"btn btn-ghost btn-sm",style:{fontSize:10,padding:"2px 8px"},onClick:function(){_tab[1]("register");_healthSort[1](true);_healthF[1]("NeedsAttn")},title:"Jump to Register with worst-health filter"},"View all \u2192")),
+            e("div",{className:"card-body",style:{maxHeight:300,overflowY:"auto"}},
+              bottom5.length===0?e("div",{style:{textAlign:"center",padding:24,color:"var(--text-tertiary)"}},"No assets with purchase date"):
+              bottom5.map(function(r,i){var a=r.a,hs=r.hs;return e("div",{key:a.id,style:{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:"1px solid var(--border-light)",cursor:"pointer"},onClick:function(){_detailAsset[1](a)}},
+                e("span",{style:{fontSize:10,fontWeight:700,color:"var(--text-hint)",minWidth:18}},i+1+"."),
+                e("div",{style:{flex:1,minWidth:0}},
+                  e("div",{style:{fontSize:11,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},a.name),
+                  e("div",{style:{fontSize:9,color:"var(--text-tertiary)"}},(a.branch||"")+" \u00B7 "+a.condition+(hs.repairs12mo>0?" \u00B7 "+hs.repairs12mo+" repairs/12mo":""))),
+                e("div",{style:{textAlign:"right",minWidth:70}},
+                  e("span",{style:{fontSize:14,fontWeight:800,fontFamily:mono,color:HEALTH_C[hs.band]}},hs.score),
+                  e("div",{style:{fontSize:9,color:HEALTH_C[hs.band],fontWeight:700,textTransform:"uppercase"}},HEALTH_L[hs.band])))}))));
+      })(),
       // ROW 5: Age + Location
       e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16,marginBottom:20}},
         e("div",{className:"card"},e("div",{className:"card-header"},e("span",{className:"card-title"},"Asset Age Distribution")),
@@ -10915,28 +10990,105 @@ function AssetManagementPage(p){
             locSorted.map(function(loc){var pctL=totalAssets>0?Math.round(locCounts[loc]/totalAssets*100):0;return e("div",{key:loc,style:{marginBottom:8}},e("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}},e("span",{style:{fontWeight:600}},loc),e("span",{style:{color:"var(--text-secondary)",fontFamily:mono,fontSize:10}},locCounts[loc]+" ("+pctL+"%)")),e("div",{style:{height:5,background:"var(--bg-hover)",borderRadius:3,overflow:"hidden"}},e("div",{style:{height:"100%",width:pctL+"%",background:"#487FFF",borderRadius:3}})))}),
             locSorted.length===0&&e("div",{style:{textAlign:"center",padding:24,color:"var(--text-tertiary)"}},"No location data")))),
       // ROW 6: Calibrations + Umur Manfaat
-      e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16}},
-        e("div",{className:"card"},e("div",{className:"card-header"},e("span",{className:"card-title"},"Upcoming Calibrations & Service")),
-          e("div",{className:"card-body",style:{maxHeight:280,overflowY:"auto"}},
-            upcoming.length===0?e("div",{style:{textAlign:"center",padding:24,color:"var(--text-tertiary)",fontSize:12}},"No upcoming calibrations"):
-            upcoming.map(function(u){return e("div",{key:u.asset.id,style:{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:"1px solid var(--border-light)",cursor:"pointer"},onClick:function(){_detailAsset[1](u.asset)}},e("div",{style:{width:28,height:28,borderRadius:6,background:u.overdue?"rgba(239,74,0,.1)":"rgba(72,127,255,.1)",display:"flex",alignItems:"center",justifyContent:"center"}},ri(u.overdue?"alert-triangle":"calendar",{size:13,color:u.overdue?"#EF4A00":"#487FFF"})),e("div",{style:{flex:1,minWidth:0}},e("div",{style:{fontSize:11,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},u.asset.name),e("div",{style:{fontSize:9,color:"var(--text-tertiary)"}},u.asset.branch||"")),e("span",{style:{fontSize:10,fontWeight:700,fontFamily:mono,color:u.overdue?"#EF4A00":"var(--text-primary)"}},fmtF(u.nextDue)),u.overdue&&e("span",{style:{fontSize:8,fontWeight:700,color:"#EF4A00",padding:"2px 4px",borderRadius:4,background:"rgba(239,74,0,.1)"}},"OVERDUE"))}))),
+      e("div",{style:{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16,marginBottom:20}},
+        // Upcoming Calibrations — split into Overdue + Expiring Soon sub-groups
+        (function(){
+          // Classify each "upcoming" entry by its current calibration status
+          var overdueList=[],soonList=[];
+          upcoming.forEach(function(u){
+            var cs=calcCalibrationStatus(u.asset);
+            if(cs.status==="Overdue")overdueList.push({u:u,cs:cs});
+            else if(cs.status==="ExpiringSoon")soonList.push({u:u,cs:cs});
+          });
+          // Also pick up any ExpiringSoon/Overdue assets not in the original top-8 `upcoming`
+          // (upcoming only shows next 8 by date; for sub-group accuracy we should include all).
+          var seen={};overdueList.concat(soonList).forEach(function(x){seen[x.u.asset.id]=true});
+          assets.forEach(function(a){
+            if(seen[a.id])return;
+            var cs=calcCalibrationStatus(a);
+            if(cs.status==="Overdue")overdueList.push({u:{asset:a,nextDue:cs.nextDue,overdue:true},cs:cs});
+            else if(cs.status==="ExpiringSoon")soonList.push({u:{asset:a,nextDue:cs.nextDue,overdue:false},cs:cs});
+          });
+          // Sort each sub-group by date ascending
+          overdueList.sort(function(a,b){return(a.u.nextDue||"").localeCompare(b.u.nextDue||"")});
+          soonList.sort(function(a,b){return(a.u.nextDue||"").localeCompare(b.u.nextDue||"")});
+
+          function row(x){var u=x.u,cs=x.cs;return e("div",{key:u.asset.id,style:{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:"1px solid var(--border-light)",cursor:"pointer"},onClick:function(){_detailAsset[1](u.asset)}},
+            e("div",{style:{width:24,height:24,borderRadius:6,background:cs.color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},ri(cs.status==="Overdue"?"alert-triangle":"calendar-clock",{size:12,color:cs.color})),
+            e("div",{style:{flex:1,minWidth:0}},
+              e("div",{style:{fontSize:11,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},u.asset.name),
+              e("div",{style:{fontSize:9,color:"var(--text-tertiary)"}},(u.asset.branch||"")+" \u00B7 "+cs.label)),
+            e("span",{style:{fontSize:10,fontWeight:700,fontFamily:mono,color:cs.color}},fmtF(u.nextDue)));
+          }
+
+          return e("div",{className:"card"},
+            e("div",{className:"card-header",style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+              e("span",{className:"card-title"},"Upcoming Calibrations"),
+              e("div",{style:{display:"flex",gap:6}},
+                overdueList.length>0&&e("span",{style:{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:50,background:"rgba(239,74,0,.1)",color:"#EF4A00"}},overdueList.length+" overdue"),
+                soonList.length>0&&e("span",{style:{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:50,background:"rgba(255,159,41,.1)",color:"#FF9F29"}},soonList.length+" ≤30d"))),
+            e("div",{className:"card-body",style:{maxHeight:280,overflowY:"auto"}},
+              overdueList.length===0&&soonList.length===0&&e("div",{style:{textAlign:"center",padding:24,color:"var(--text-tertiary)",fontSize:12}},"No upcoming or overdue calibrations"),
+              overdueList.length>0&&e("div",{style:{marginBottom:soonList.length>0?10:0}},
+                e("div",{style:{fontSize:10,fontWeight:700,color:"#EF4A00",textTransform:"uppercase",letterSpacing:.5,marginBottom:4,display:"flex",alignItems:"center",gap:4}},ri("alert-triangle",{size:11,color:"#EF4A00"})," Overdue ("+overdueList.length+")"),
+                overdueList.map(row)),
+              soonList.length>0&&e("div",null,
+                e("div",{style:{fontSize:10,fontWeight:700,color:"#FF9F29",textTransform:"uppercase",letterSpacing:.5,marginBottom:4,display:"flex",alignItems:"center",gap:4}},ri("calendar-clock",{size:11,color:"#FF9F29"})," Expiring Soon ("+soonList.length+")"),
+                soonList.map(row))));
+        })(),
         e("div",{className:"card"},e("div",{className:"card-header"},e("span",{className:"card-title"},"By Umur Manfaat (Useful Life)")),
           e("div",{className:"card-body"},
-            (function(){var ulCounts={};assets.forEach(function(a){var ul=Number(a.usefulLife)||0;var lbl=ul>0?ul+" tahun":"Unknown";ulCounts[lbl]=(ulCounts[lbl]||0)+1});var ulSorted=Object.keys(ulCounts).sort(function(a,b){return ulCounts[b]-ulCounts[a]});var ulColors={"5 tahun":"#487FFF","8 tahun":"#45B369","4 tahun":"#8B5CF6","20 tahun":"#FF9F29","Unknown":"#CBD5E1"};var maxUl=ulCounts[ulSorted[0]]||1;return ulSorted.map(function(ul){var pct=Math.round(ulCounts[ul]/maxUl*100);return e("div",{key:ul,style:{display:"flex",alignItems:"center",gap:10,marginBottom:8}},e("span",{style:{fontSize:11,fontWeight:600,minWidth:70,color:"var(--text-secondary)"}},ul),e("div",{style:{flex:1,height:16,background:"var(--bg-hover)",borderRadius:4,overflow:"hidden"}},e("div",{style:{height:"100%",width:pct+"%",background:ulColors[ul]||"#6B7280",borderRadius:4}})),e("span",{style:{fontFamily:mono,fontSize:11,fontWeight:700,minWidth:30,textAlign:"right"}},ulCounts[ul]))})})()))))
+            (function(){var ulCounts={};assets.forEach(function(a){var ul=Number(a.usefulLife)||0;var lbl=ul>0?ul+" tahun":"Unknown";ulCounts[lbl]=(ulCounts[lbl]||0)+1});var ulSorted=Object.keys(ulCounts).sort(function(a,b){return ulCounts[b]-ulCounts[a]});var ulColors={"5 tahun":"#487FFF","8 tahun":"#45B369","4 tahun":"#8B5CF6","20 tahun":"#FF9F29","Unknown":"#CBD5E1"};var maxUl=ulCounts[ulSorted[0]]||1;return ulSorted.map(function(ul){var pct=Math.round(ulCounts[ul]/maxUl*100);return e("div",{key:ul,style:{display:"flex",alignItems:"center",gap:10,marginBottom:8}},e("span",{style:{fontSize:11,fontWeight:600,minWidth:70,color:"var(--text-secondary)"}},ul),e("div",{style:{flex:1,height:16,background:"var(--bg-hover)",borderRadius:4,overflow:"hidden"}},e("div",{style:{height:"100%",width:pct+"%",background:ulColors[ul]||"#6B7280",borderRadius:4}})),e("span",{style:{fontFamily:mono,fontSize:11,fontWeight:700,minWidth:30,textAlign:"right"}},ulCounts[ul]))})})()))),
+      // ROW 7 (last): Depreciation Overview — collapsible, closed by default
+      e("div",{className:"card"},
+        e("button",{onClick:function(){_depExp[1](!_depExp[0])},style:{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 20px",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}},
+          e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+            ri(_depExp[0]?"chevron-down":"chevron-right",{size:16,color:"var(--text-secondary)"}),
+            e("span",{style:{fontSize:14,fontWeight:700,color:"var(--text-primary)"}},"Depreciation Overview"),
+            e("span",{style:{fontSize:10,color:"var(--text-tertiary)",fontFamily:mono}},"("+totalAssets+" assets)")),
+          e("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+            fullyDep>0&&e("span",{style:{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(239,74,0,.1)",color:"#EF4A00"}},fullyDep+" fully dep."),
+            e("span",{style:{fontSize:10,color:"var(--text-tertiary)"}},_depExp[0]?"Hide":"Show"))),
+        _depExp[0]&&e("div",{className:"card-body",style:{borderTop:"1px solid var(--border-light)"}},
+          [{l:"Fully Depreciated (BV = 0)",v:fullyDep,val:fullyDepVal,c:"#EF4A00"},{l:"Depreciating",v:depreciating,val:depreciatingVal,c:"#FF9F29"},{l:"New (< 1 year)",v:newAssets,val:newVal,c:"#45B369"},{l:"No Value Data",v:unknownDep,val:0,c:"#CBD5E1"}].map(function(seg){var pct=Math.round(seg.v/Math.max(1,totalAssets)*100);return e("div",{key:seg.l,style:{marginBottom:12}},e("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:4}},e("span",{style:{fontWeight:600,color:"var(--text-secondary)"}},seg.l),e("div",{style:{display:"flex",gap:8}},e("span",{style:{fontFamily:mono,fontWeight:700,color:seg.c}},seg.v),e("span",{style:{fontSize:9,color:"var(--text-tertiary)",fontFamily:mono}},pct+"%"))),e("div",{style:{height:8,background:"var(--bg-hover)",borderRadius:4,overflow:"hidden"}},e("div",{style:{height:"100%",width:pct+"%",background:seg.c,borderRadius:4}})),seg.val>0&&e("div",{style:{fontSize:9,color:"var(--text-tertiary)",marginTop:2,textAlign:"right"}},fmtC(seg.val)))}),
+          e("div",{style:{fontSize:10,color:"var(--text-tertiary)",fontStyle:"italic",marginTop:8,paddingTop:8,borderTop:"1px dashed var(--border-light)"}},"Tip: use the Depreciation filter on the Asset Register to drill into any of these groups."))))
   }
 
   // ═══ RENDER — REGISTER TAB ═══
   function renderRegister(){
     var sq=_search[0].toLowerCase();
+    // Depreciation-range buckets (matches calcDepreciation().pct, which is 0-100).
+    // "All" passes everything through; other options gate on the range.
+    function inDepRange(a){
+      if(_depF[0]==="All")return true;
+      var dp=calcDepreciation(a).pct;
+      if(_depF[0]==="0-25")return dp<25;
+      if(_depF[0]==="25-50")return dp>=25&&dp<50;
+      if(_depF[0]==="50-75")return dp>=50&&dp<75;
+      if(_depF[0]==="75-100")return dp>=75&&dp<100;
+      if(_depF[0]==="100")return dp>=100;
+      if(_depF[0]==="NoData")return!a.purchaseDate||!a.purchasePrice;
+      return true;
+    }
     var filtered=assets.filter(function(a){
       if(sq&&(a.name||"").toLowerCase().indexOf(sq)<0&&(a.brand||"").toLowerCase().indexOf(sq)<0&&(a.assetCode||"").toLowerCase().indexOf(sq)<0&&(a.jenisAset||"").toLowerCase().indexOf(sq)<0&&assetCode(a).toLowerCase().indexOf(sq)<0)return false;
       if(_catF[0]!=="All"&&a.kategori!==_catF[0])return false;
       if(_statusF[0]!=="All"&&a.status!==_statusF[0])return false;
+      if(_branchF[0]!=="All"&&(a.branch||"Unassigned")!==_branchF[0])return false;
       if(_locF[0]!=="All"&&a.location!==_locF[0])return false;
       if(_condF[0]!=="All"&&a.condition!==_condF[0])return false;
+      if(!inDepRange(a))return false;
+      if(_healthF[0]==="NeedsAttn"&&calcHealthScore(a).score>=50)return false;
+      if(_calF[0]!=="All"&&calcCalibrationStatus(a).status!==_calF[0])return false;
       return true});
+    // Optional sort by health ascending (worst first). Otherwise preserves existing order.
+    if(_healthSort[0]){
+      filtered=filtered.slice().sort(function(a,b){return calcHealthScore(a).score-calcHealthScore(b).score});
+    }
     var filtValue=filtered.reduce(function(a2,x){return a2+(Number(x.purchasePrice)||0)},0);
     var locs=[];var locMap={};assets.forEach(function(a){if(a.location&&!locMap[a.location]){locMap[a.location]=true;locs.push(a.location)}});
+    // Branch list: unique a.branch across all assets (not just filtered), sorted alpha, "Unassigned" for blanks.
+    var branches=[];var brMap={};assets.forEach(function(a){var b=a.branch||"Unassigned";if(!brMap[b]){brMap[b]=true;branches.push(b)}});branches.sort();
 
     return e("div",null,
       // Filters & actions bar
@@ -10944,9 +11096,29 @@ function AssetManagementPage(p){
         e("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
           e("input",{className:"input",value:_search[0],onChange:function(ev){_search[1](ev.target.value)},placeholder:"\uD83D\uDD0D Search assets...",style:{width:180}}),
           e("select",{className:"select",value:_catF[0],onChange:function(ev){_catF[1](ev.target.value)},style:{width:160}},e("option",{value:"All"},"All Categories"),CATEGORIES.map(function(c){return e("option",{key:c,value:c},c)})),
+          e("select",{className:"select",value:_branchF[0],onChange:function(ev){_branchF[1](ev.target.value)},style:{width:140}},e("option",{value:"All"},"All Branches"),branches.map(function(b){return e("option",{key:b,value:b},b)})),
           e("select",{className:"select",value:_statusF[0],onChange:function(ev){_statusF[1](ev.target.value)},style:{width:130}},e("option",{value:"All"},"All Status"),STATUSES.map(function(s){return e("option",{key:s,value:s},s)})),
+          !mob&&e("select",{className:"select",value:_depF[0],onChange:function(ev){_depF[1](ev.target.value)},style:{width:160},title:"Filter by depreciation %"},
+            e("option",{value:"All"},"All Depreciation"),
+            e("option",{value:"0-25"},"0\u201325% (Almost new)"),
+            e("option",{value:"25-50"},"25\u201350% (Healthy)"),
+            e("option",{value:"50-75"},"50\u201375% (Mid-life)"),
+            e("option",{value:"75-100"},"75\u2013<100% (Near end)"),
+            e("option",{value:"100"},"100% (Fully depreciated)"),
+            e("option",{value:"NoData"},"No value data")),
+          !mob&&e("select",{className:"select",value:_calF[0],onChange:function(ev){_calF[1](ev.target.value)},style:{width:160},title:"Filter by calibration status"},
+            e("option",{value:"All"},"All Calibration"),
+            e("option",{value:"Overdue"},"Overdue"),
+            e("option",{value:"ExpiringSoon"},"Expiring \u226430d"),
+            e("option",{value:"Valid"},"Valid"),
+            e("option",{value:"Never"},"Never calibrated"),
+            e("option",{value:"NotRequired"},"Not required")),
           !mob&&e("select",{className:"select",value:_locF[0],onChange:function(ev){_locF[1](ev.target.value)},style:{width:140}},e("option",{value:"All"},"All Locations"),locs.map(function(l){return e("option",{key:l,value:l},l)})),
-          !mob&&e("select",{className:"select",value:_condF[0],onChange:function(ev){_condF[1](ev.target.value)},style:{width:130}},e("option",{value:"All"},"All Conditions"),CONDITIONS.map(function(c){return e("option",{key:c,value:c},c)}))),
+          !mob&&e("select",{className:"select",value:_condF[0],onChange:function(ev){_condF[1](ev.target.value)},style:{width:130}},e("option",{value:"All"},"All Conditions"),CONDITIONS.map(function(c){return e("option",{key:c,value:c},c)})),
+          // Health: Needs Attention quick filter (Score < 50)
+          e("button",{className:"btn btn-sm",style:{fontSize:11,padding:"6px 10px",background:_healthF[0]==="NeedsAttn"?"#EF4A00":"var(--bg-surface)",color:_healthF[0]==="NeedsAttn"?"#fff":"#EF4A00",borderColor:"#EF4A00",fontWeight:600},title:"Show only assets with health score below 50",onClick:function(){_healthF[1](_healthF[0]==="NeedsAttn"?"All":"NeedsAttn")}},ri("alert-triangle",{size:12})," Needs attention"),
+          // Health: sort worst-first toggle
+          e("button",{className:"btn btn-sm",style:{fontSize:11,padding:"6px 10px",background:_healthSort[0]?"#487FFF":"var(--bg-surface)",color:_healthSort[0]?"#fff":"#487FFF",borderColor:"#487FFF",fontWeight:600},title:"Sort by health score ascending (worst first)",onClick:function(){_healthSort[1](!_healthSort[0])}},ri(_healthSort[0]?"arrow-down-a-z":"arrow-down-wide-narrow",{size:12})," Worst first")),
         e("div",{style:{display:"flex",gap:8,alignItems:"center"}},
           e("span",{style:{fontSize:12,color:"var(--text-tertiary)"}},filtered.length+" assets · "+fmtC(filtValue)),
           e(ExportBtn,{onClick:function(){exportCSV("scci-assets-"+fmtD(new Date())+".csv",
@@ -10978,9 +11150,9 @@ function AssetManagementPage(p){
         filtered.length===0?e("div",{style:{textAlign:"center",padding:48,color:"var(--text-tertiary)"}},"No assets found"):
         e("div",{style:{overflowX:"auto"}},
           e("table",null,
-            e("thead",null,e("tr",null,[mob?"":"Code","Name","Kategori",mob?"":"Jenis","Branch","Age",mob?"":"Book Value","Dep","Location","Status","Kondisi",""].filter(Boolean).map(function(h){return e("th",{key:h,style:{fontSize:10}},h)}))),
+            e("thead",null,e("tr",null,[mob?"":"Code","Name","Kategori",mob?"":"Jenis","Branch","Age",mob?"":"Book Value","Dep","Health","Cal",mob?"":"Location","Status","Kondisi",""].filter(Boolean).map(function(h){return e("th",{key:h,style:{fontSize:10}},h)}))),
             e("tbody",null,filtered.map(function(a){
-              var dep=calcDepreciation(a);var age=calcAge(a.purchaseDate);var nc=getNextCalibration(a);
+              var dep=calcDepreciation(a);var age=calcAge(a.purchaseDate);var nc=getNextCalibration(a);var hs=calcHealthScore(a);var cs=calcCalibrationStatus(a);
               return e("tr",{key:a.id,style:{cursor:"pointer"},onClick:function(){_detailAsset[1](a)}},
                 !mob&&e("td",{style:{fontFamily:mono,fontSize:9,color:"#487FFF",fontWeight:600,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},a.assetCode||"—"),
                 e("td",null,e("div",{style:{fontWeight:600,fontSize:12}},a.name),a.brand&&e("div",{style:{fontSize:9,color:"var(--text-tertiary)"}},a.brand+(a.specs?" · "+a.specs:""))),
@@ -10993,7 +11165,17 @@ function AssetManagementPage(p){
                   e("div",{style:{width:40,height:5,background:"var(--bg-hover)",borderRadius:3,overflow:"hidden"}},
                     e("div",{style:{height:"100%",width:dep.pct+"%",background:dep.pct>=80?"#EF4A00":dep.pct>=50?"#FF9F29":"#45B369",borderRadius:3}})),
                   e("span",{style:{fontSize:9,fontFamily:mono,color:dep.pct>=80?"#EF4A00":"var(--text-tertiary)"}},dep.pct+"%"))),
-                e("td",{style:{fontSize:11,color:"var(--text-secondary)"}},a.location||"—"),
+                // Health pill — colored by band, tooltip shows component breakdown
+                e("td",null,e("span",{
+                  style:{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:50,background:HEALTH_C[hs.band]+"22",color:HEALTH_C[hs.band],fontFamily:mono},
+                  title:"Age "+Math.round(hs.age*100)+"% · Condition "+Math.round(hs.cond*100)+"% · Calibration "+Math.round(hs.cal*100)+"% · Breakdown "+Math.round(hs.brk*100)+"%"+(hs.hilang?" · HILANG forces score=0":"")
+                },hs.score)),
+                // Calibration pill — colored by status
+                e("td",null,e("span",{
+                  style:{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:50,background:cs.color+"22",color:cs.color,whiteSpace:"nowrap"},
+                  title:cs.status==="NotRequired"?"Calibration not required for this category":cs.status==="Never"?"No calibration log on record":cs.status+" \u2014 next due "+(cs.nextDue||"\u2014")+(cs.lastDone?" (last: "+cs.lastDone+")":"")
+                },cs.status==="NotRequired"?"N/A":cs.status==="Overdue"?"Overdue":cs.status==="ExpiringSoon"?"\u2264"+cs.daysToNext+"d":cs.status==="Never"?"Never":"Valid")),
+                !mob&&e("td",{style:{fontSize:11,color:"var(--text-secondary)"}},a.location||"—"),
                 e("td",null,e("span",{style:{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:(STATUS_C[a.status]||"#9CA3AF")+"18",color:STATUS_C[a.status]||"#9CA3AF"}},a.status)),
                 e("td",null,e("span",{style:{fontSize:10,fontWeight:600,color:COND_C[a.condition]||"#9CA3AF"}},a.condition)),
                 e("td",{style:{textAlign:"right"},onClick:function(ev){ev.stopPropagation()}},admin&&e("div",{style:{display:"flex",gap:4}},
@@ -11036,7 +11218,16 @@ function AssetManagementPage(p){
         e("div",{style:{display:"flex",gap:8}},
           e(Badge,{bg:"rgba(72,127,255,.1)",color:"#487FFF"},totalInRange+" logs"),
           e(Badge,{bg:"rgba(69,179,105,.1)",color:"#45B369"},totalHrs.toFixed(1)+"h total"),
-          admin&&e("button",{className:"btn btn-primary btn-sm",onClick:function(){_showUtil[1](true)}},ri("plus",{size:12})," Log Usage"))),
+          admin&&e("button",{className:"btn btn-primary btn-sm",onClick:function(){_showUtil[1](true)}},ri("plus",{size:12})," Log Usage"),
+          admin&&utilization.length>0&&e("button",{className:"btn btn-sm",style:{borderColor:"#EF4A00",color:"#EF4A00",fontSize:11,padding:"6px 10px"},title:"Bulk delete ALL utilization logs (demo data cleanup)",onClick:function(){
+            if(!confirm("Delete ALL "+utilization.length+" utilization logs? This cannot be undone."))return;
+            if(!confirm("Are you absolutely sure? This will wipe every usage log in the system."))return;
+            _saving[1](true);
+            apiPost("clearAllAssetUtilization").then(function(r){
+              if(r&&r.ok){showToast("Cleared "+r.count+" utilization logs","success");load(true)}
+              else{showToast((r&&r.error)||"Clear failed","error")}
+            }).finally(function(){_saving[1](false)})
+          }},ri("trash-2",{size:12})," Clear All"))),
       // KPI cards
       e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(4,1fr)",gap:12,marginBottom:20}},
         [{l:"Usage Logs",v:String(totalInRange),ic:"clipboard-list",c:"#487FFF"},
@@ -11141,7 +11332,16 @@ function AssetManagementPage(p){
           e(ExportBtn,{onClick:function(){exportCSV("scci-service-logs-"+fmtD(new Date())+".csv",
             ["Date","Asset","Type","Result","Provider","Technician","Cost","Certificate","Next Due","Findings"],
             filtered.map(function(l){var ast=assets.filter(function(a2){return a2.id===l.assetId})[0];return[l.date,ast?ast.name:l.assetId,l.type,l.result,l.provider,l.technician,Number(l.cost)||0,l.certificateNumber,l.nextDueDate,l.findings]}))}}),
-          admin&&e("button",{className:"btn btn-primary",onClick:function(){_editService[1](null);_showService[1]("new")}},ri("plus",{size:13})," Add Service Log"))),
+          admin&&e("button",{className:"btn btn-primary",onClick:function(){_editService[1](null);_showService[1]("new")}},ri("plus",{size:13})," Add Service Log"),
+          admin&&serviceLogs.length>0&&e("button",{className:"btn btn-sm",style:{borderColor:"#EF4A00",color:"#EF4A00",fontSize:11,padding:"6px 10px"},title:"Bulk delete ALL service & calibration logs (demo data cleanup)",onClick:function(){
+            if(!confirm("Delete ALL "+serviceLogs.length+" service/calibration logs? This cannot be undone."))return;
+            if(!confirm("Are you absolutely sure? This will wipe every service record in the system."))return;
+            _saving[1](true);
+            apiPost("clearAllAssetServiceLogs").then(function(r){
+              if(r&&r.ok){showToast("Cleared "+r.count+" service logs","success");load(true)}
+              else{showToast((r&&r.error)||"Clear failed","error")}
+            }).finally(function(){_saving[1](false)})
+          }},ri("trash-2",{size:12})," Clear All"))),
       e("div",{className:"card",style:{overflow:"hidden"}},
         filtered.length===0?e("div",{style:{textAlign:"center",padding:48,color:"var(--text-tertiary)"}},"No service records"):
         e("div",{style:{overflowX:"auto"}},
@@ -11436,189 +11636,6 @@ function AssetManagementPage(p){
   // ═══ MAIN RENDER ═══
   if(_loading[0])return e(Spinner);
 
-  // ─── WORKFLOW RENDERERS & MODALS ───
-  function WorkflowDetailModal(pp){
-    var kind=pp.kind,item=pp.item;
-    var stages=wfStages(kind);
-    var curIdx=stages.indexOf(item.status);
-    var titleVal=item[wfTitleField(kind)]||item.id;
-    var acts=admin?wfActions(kind,item):[];
-    var c=WF_C[item.status]||"#9CA3AF";
-    return e("div",{className:"modal-overlay",onClick:pp.onClose},
-      e("div",{className:"modal-card",style:{maxWidth:780,maxHeight:"90vh",overflow:"auto"},onClick:function(ev){ev.stopPropagation()}},
-        e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}},
-          e("div",null,
-            e("div",{style:{fontSize:11,color:"var(--text-tertiary)",fontWeight:600,letterSpacing:.5}},wfLabel(kind).toUpperCase()+" \u2022 "+item.id),
-            e("h3",{style:{fontSize:17,fontWeight:700,margin:"4px 0 6px"}},titleVal),
-            e("div",{style:{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}},
-              e("span",{style:{padding:"3px 10px",borderRadius:50,fontSize:11,fontWeight:700,background:c+"22",color:c}},item.status),
-              e("span",{style:{fontSize:11,color:"var(--text-tertiary)"}},daysInStatus(item)+" days in current stage"),
-              item.priority&&e("span",{style:{padding:"2px 8px",borderRadius:4,fontSize:10,fontWeight:700,background:(PRIO_C[item.priority]||"#9CA3AF")+"22",color:PRIO_C[item.priority]||"#9CA3AF"}},item.priority))),
-          e("button",{className:"btn btn-ghost btn-sm",onClick:pp.onClose},"\u2715")),
-        e("div",{style:{display:"flex",gap:2,marginBottom:18,flexWrap:"wrap"}},
-          stages.map(function(st,i){
-            var done=curIdx>=i&&item.status!=="Rejected";
-            var stc=WF_C[st]||"#9CA3AF";
-            return e("div",{key:st,style:{flex:1,minWidth:80,padding:"4px 6px",borderRadius:4,fontSize:9,fontWeight:600,textAlign:"center",background:done?stc:"var(--border-light)",color:done?"#fff":"var(--text-tertiary)"}},st)
-          })),
-        e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16,fontSize:12}},
-          kind==="proc"&&[
-            e("div",{key:"a"},e("strong",null,"Trigger: "),item.triggerType||"\u2014"),
-            e("div",{key:"b"},e("strong",null,"Category: "),item.category||"\u2014"),
-            e("div",{key:"c"},e("strong",null,"Qty: "),item.qty||1),
-            e("div",{key:"d"},e("strong",null,"Est. Cost: "),fmtC(item.estimatedCost||0)),
-            e("div",{key:"e"},e("strong",null,"Destination: "),item.destinationOffice||"\u2014"),
-            e("div",{key:"f"},e("strong",null,"Requested by: "),item.requestedBy||"\u2014"),
-            item.linkedProject&&e("div",{key:"g",style:{gridColumn:"1/3"}},e("strong",null,"Linked Project: "),item.linkedProject),
-            item.poNumber&&e("div",{key:"h"},e("strong",null,"PO #: "),item.poNumber),
-            item.vendor&&e("div",{key:"i"},e("strong",null,"Vendor: "),item.vendor),
-            e("div",{key:"j",style:{gridColumn:"1/3"}},e("strong",null,"Justification: "),item.justification||"\u2014")
-          ],
-          kind==="trf"&&[
-            e("div",{key:"a"},e("strong",null,"Asset: "),item.assetName),
-            e("div",{key:"b"},e("strong",null,"Reason: "),item.reason),
-            e("div",{key:"c"},e("strong",null,"From: "),item.fromLocation+" ("+(item.fromCustodian||"\u2014")+")"),
-            e("div",{key:"d"},e("strong",null,"To: "),item.toLocation+" ("+(item.toCustodian||"\u2014")+")"),
-            e("div",{key:"e"},e("strong",null,"Requested by: "),item.requestedBy||"\u2014"),
-            item.expectedReturnDate&&e("div",{key:"f"},e("strong",null,"Expected Return: "),item.expectedReturnDate),
-            item.shippedDate&&e("div",{key:"g"},e("strong",null,"Shipped: "),item.shippedDate),
-            item.receivedDate&&e("div",{key:"h"},e("strong",null,"Received: "),item.receivedDate)
-          ],
-          kind==="svo"&&[
-            e("div",{key:"a"},e("strong",null,"Asset: "),item.assetName),
-            e("div",{key:"b"},e("strong",null,"Type: "),item.serviceType),
-            e("div",{key:"c"},e("strong",null,"Location: "),item.currentLocation||"\u2014"),
-            e("div",{key:"d"},e("strong",null,"Reported by: "),item.reportedBy||"\u2014"),
-            e("div",{key:"e"},e("strong",null,"Est. Cost: "),fmtC(item.estimatedCost||0)),
-            e("div",{key:"f"},e("strong",null,"Vendor: "),item.vendor||"\u2014"),
-            item.scheduledDate&&e("div",{key:"g"},e("strong",null,"Scheduled: "),item.scheduledDate),
-            item.partsNeeded&&e("div",{key:"h",style:{gridColumn:"1/3"}},e("strong",null,"Parts: "),item.partsNeeded),
-            e("div",{key:"i",style:{gridColumn:"1/3"}},e("strong",null,"Issue: "),item.issueDescription||"\u2014")
-          ]),
-        e("div",{style:{borderTop:"1px solid var(--border-light)",paddingTop:12,marginBottom:14}},
-          e("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-tertiary)",letterSpacing:.5,marginBottom:8}},"TIMELINE"),
-          (item.timeline||[]).map(function(t,i){
-            var tc=WF_C[t.action]||"#9CA3AF";
-            return e("div",{key:i,style:{display:"flex",gap:10,padding:"6px 0",borderBottom:i<(item.timeline.length-1)?"1px solid var(--border-light)":"none"}},
-              e("div",{style:{width:8,height:8,borderRadius:50,background:tc,marginTop:5,flexShrink:0}}),
-              e("div",{style:{flex:1,fontSize:12}},
-                e("div",{style:{fontWeight:600}},t.action," ",e("span",{style:{fontWeight:400,color:"var(--text-tertiary)"}},"by "+t.actor)),
-                t.note&&e("div",{style:{fontSize:11,color:"var(--text-secondary)",fontStyle:"italic",marginTop:2}},t.note)),
-              e("div",{style:{fontSize:10,color:"var(--text-tertiary)",fontFamily:mono,whiteSpace:"nowrap"}},t.date))
-          })),
-        acts.length>0&&e("div",{style:{display:"flex",gap:8,flexWrap:"wrap",paddingTop:8,borderTop:"1px solid var(--border-light)"}},
-          acts.map(function(a,i){return e("button",{key:i,className:"btn",style:{background:a.color,color:"#fff",fontSize:12,padding:"8px 14px",display:"flex",alignItems:"center",gap:6},onClick:a.act},ri(a.icon,{size:13}),a.label)})),
-        !admin&&e("div",{style:{fontSize:11,color:"var(--text-tertiary)",fontStyle:"italic",marginTop:8}},"View-only mode \u2014 admins can advance workflow stages.")))
-  }
-  function WorkflowAddModal(pp){
-    var kind=pp.kind;
-    var _f=useState(kind==="proc"?{triggerType:"User Request",itemName:"",category:CATEGORIES[0],qty:1,estimatedCost:0,destinationOffice:"Jakarta HQ",requestedBy:"",justification:""}:kind==="trf"?{assetId:"",assetName:"",fromLocation:"Jakarta HQ",fromCustodian:"",toLocation:"Manila Branch",toCustodian:"",reason:"Utilization",expectedReturnDate:"",requestedBy:""}:{assetId:"",assetName:"",currentLocation:"Jakarta HQ",reportedBy:"",issueDescription:"",serviceType:"Calibration",priority:"Medium",estimatedCost:0,vendor:""});
-    function set(k,v){var o={};o[k]=v;_f[1](Object.assign({},_f[0],o))}
-    function save(){
-      var f=_f[0];
-      var initial=(kind==="svo"?"Reported":"Requested");
-      var actor=f.requestedBy||f.reportedBy||"User";
-      var rec=Object.assign({},f,{id:wfNextId(kind),status:initial,timeline:[{date:fmtD(new Date()),action:initial,actor:actor}]});
-      if(kind==="proc"||kind==="trf")rec.requestDate=fmtD(new Date());
-      else rec.reportedDate=fmtD(new Date());
-      wfSet(kind,[rec].concat(wfData(kind)));
-      showToast("New "+wfLabel(kind)+" created","success");
-      pp.onClose()
-    }
-    var assetOpts=(_assets[0]||[]).slice(0,80);
-    return e("div",{className:"modal-overlay",onClick:pp.onClose},
-      e("div",{className:"modal-card",style:{maxWidth:560,maxHeight:"90vh",overflow:"auto"},onClick:function(ev){ev.stopPropagation()}},
-        e("h3",{style:{fontSize:16,fontWeight:700,marginBottom:14}},"\u2795 New "+wfLabel(kind)),
-        kind==="proc"&&e("div",null,
-          e("label",{className:"label"},"Trigger Type"),
-          e("select",{className:"input",value:_f[0].triggerType,onChange:function(ev){set("triggerType",ev.target.value)}},PROC_TRIGGERS.map(function(x){return e("option",{key:x,value:x},x)})),
-          e("label",{className:"label"},"Item Name *"),
-          e("input",{className:"input",value:_f[0].itemName,onChange:function(ev){set("itemName",ev.target.value)},placeholder:"e.g., Analytical Balance"}),
-          e("label",{className:"label"},"Category"),
-          e("select",{className:"input",value:_f[0].category,onChange:function(ev){set("category",ev.target.value)}},CATEGORIES.map(function(x){return e("option",{key:x,value:x},x)})),
-          e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
-            e("div",null,e("label",{className:"label"},"Qty"),e("input",{type:"number",className:"input",value:_f[0].qty,onChange:function(ev){set("qty",Number(ev.target.value))}})),
-            e("div",null,e("label",{className:"label"},"Est. Cost (IDR)"),e("input",{type:"number",className:"input",value:_f[0].estimatedCost,onChange:function(ev){set("estimatedCost",Number(ev.target.value))}}))),
-          e("label",{className:"label"},"Destination Office"),
-          e("input",{className:"input",value:_f[0].destinationOffice,onChange:function(ev){set("destinationOffice",ev.target.value)}}),
-          e("label",{className:"label"},"Requested By"),
-          e("input",{className:"input",value:_f[0].requestedBy,onChange:function(ev){set("requestedBy",ev.target.value)}}),
-          e("label",{className:"label"},"Justification"),
-          e("textarea",{className:"input",rows:3,value:_f[0].justification,onChange:function(ev){set("justification",ev.target.value)}})),
-        kind==="trf"&&e("div",null,
-          e("label",{className:"label"},"Asset *"),
-          e("select",{className:"input",value:_f[0].assetId,onChange:function(ev){var a=assetOpts.filter(function(x){return x.id===ev.target.value})[0];if(a){_f[1](Object.assign({},_f[0],{assetId:a.id,assetName:a.name,fromLocation:a.location||_f[0].fromLocation}))}else{set("assetId",ev.target.value)}}},
-            e("option",{value:""},"\u2014 select asset \u2014"),assetOpts.map(function(a){return e("option",{key:a.id,value:a.id},a.name+" ("+a.id+")")})),
-          e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
-            e("div",null,e("label",{className:"label"},"From Location"),e("input",{className:"input",value:_f[0].fromLocation,onChange:function(ev){set("fromLocation",ev.target.value)}})),
-            e("div",null,e("label",{className:"label"},"From Custodian"),e("input",{className:"input",value:_f[0].fromCustodian,onChange:function(ev){set("fromCustodian",ev.target.value)}}))),
-          e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
-            e("div",null,e("label",{className:"label"},"To Location *"),e("input",{className:"input",value:_f[0].toLocation,onChange:function(ev){set("toLocation",ev.target.value)}})),
-            e("div",null,e("label",{className:"label"},"To Custodian"),e("input",{className:"input",value:_f[0].toCustodian,onChange:function(ev){set("toCustodian",ev.target.value)}}))),
-          e("label",{className:"label"},"Reason"),
-          e("select",{className:"input",value:_f[0].reason,onChange:function(ev){set("reason",ev.target.value)}},TRF_REASONS.map(function(x){return e("option",{key:x,value:x},x)})),
-          (_f[0].reason==="Temporary Project"||_f[0].reason==="Repair Return")&&e("div",null,
-            e("label",{className:"label"},"Expected Return Date"),
-            e("input",{type:"date",className:"input",value:_f[0].expectedReturnDate,onChange:function(ev){set("expectedReturnDate",ev.target.value)}})),
-          e("label",{className:"label"},"Requested By"),
-          e("input",{className:"input",value:_f[0].requestedBy,onChange:function(ev){set("requestedBy",ev.target.value)}})),
-        kind==="svo"&&e("div",null,
-          e("label",{className:"label"},"Asset *"),
-          e("select",{className:"input",value:_f[0].assetId,onChange:function(ev){var a=assetOpts.filter(function(x){return x.id===ev.target.value})[0];if(a){_f[1](Object.assign({},_f[0],{assetId:a.id,assetName:a.name,currentLocation:a.location||_f[0].currentLocation}))}else{set("assetId",ev.target.value)}}},
-            e("option",{value:""},"\u2014 select asset \u2014"),assetOpts.map(function(a){return e("option",{key:a.id,value:a.id},a.name+" ("+a.id+")")})),
-          e("label",{className:"label"},"Service Type"),
-          e("select",{className:"input",value:_f[0].serviceType,onChange:function(ev){set("serviceType",ev.target.value)}},SVO_TYPES_WF.map(function(x){return e("option",{key:x,value:x},x)})),
-          e("label",{className:"label"},"Priority"),
-          e("select",{className:"input",value:_f[0].priority,onChange:function(ev){set("priority",ev.target.value)}},PRIORITIES.map(function(x){return e("option",{key:x,value:x},x)})),
-          e("label",{className:"label"},"Issue Description"),
-          e("textarea",{className:"input",rows:3,value:_f[0].issueDescription,onChange:function(ev){set("issueDescription",ev.target.value)}}),
-          e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
-            e("div",null,e("label",{className:"label"},"Est. Cost (IDR)"),e("input",{type:"number",className:"input",value:_f[0].estimatedCost,onChange:function(ev){set("estimatedCost",Number(ev.target.value))}})),
-            e("div",null,e("label",{className:"label"},"Vendor"),e("input",{className:"input",value:_f[0].vendor,onChange:function(ev){set("vendor",ev.target.value)}}))),
-          e("label",{className:"label"},"Reported By"),
-          e("input",{className:"input",value:_f[0].reportedBy,onChange:function(ev){set("reportedBy",ev.target.value)}})),
-        e("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16,paddingTop:12,borderTop:"1px solid var(--border-light)"}},
-          e("button",{className:"btn btn-ghost",onClick:pp.onClose},"Cancel"),
-          e("button",{className:"btn btn-primary",onClick:save},"Create"))))
-  }
-  function renderWorkflowList(kind){
-    var arr=wfData(kind);
-    var stages=wfStages(kind).concat(["Rejected"]);
-    var sf=_wfStatusF[0];
-    var filtered=sf==="All"?arr:arr.filter(function(x){return x.status===sf});
-    var counts={};arr.forEach(function(x){counts[x.status]=(counts[x.status]||0)+1});
-    return e("div",null,
-      e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}},
-        e("div",null,
-          e("h3",{style:{fontSize:15,fontWeight:700,margin:0}},wfLabel(kind)+"s"),
-          e("p",{style:{fontSize:11,color:"var(--text-tertiary)",margin:"2px 0 0"}},"End-to-end "+wfLabel(kind).toLowerCase()+" workflow with 4-step approval (Branch \u2192 Ops GM \u2192 BOD \u2192 "+(kind==="trf"?"BOD":"Admin")+")")),
-        admin&&e("button",{className:"btn btn-primary",onClick:function(){_wfShowAdd[1](kind)}},ri("plus",{size:13})," New "+wfLabel(kind))),
-      e("div",{style:{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}},
-        e("button",{className:"btn btn-sm",style:{background:sf==="All"?"#487FFF":"var(--bg-surface)",color:sf==="All"?"#fff":"var(--text-secondary)",fontSize:11,padding:"4px 10px"},onClick:function(){_wfStatusF[1]("All")}},"All ("+arr.length+")"),
-        stages.map(function(st){var n=counts[st]||0;if(!n)return null;var c=WF_C[st]||"#9CA3AF";return e("button",{key:st,className:"btn btn-sm",style:{background:sf===st?c:c+"22",color:sf===st?"#fff":c,fontSize:11,padding:"4px 10px",fontWeight:600},onClick:function(){_wfStatusF[1](st)}},st+" ("+n+")")})),
-      filtered.length===0?e("div",{className:"card",style:{padding:30,textAlign:"center",color:"var(--text-tertiary)"}},"No "+wfLabel(kind).toLowerCase()+"s match this filter."):
-      e("div",{style:{display:"grid",gap:8}},
-        filtered.map(function(x){
-          var c=WF_C[x.status]||"#9CA3AF";
-          var title=x[wfTitleField(kind)]||x.id;
-          var sub=kind==="proc"?(x.destinationOffice+" \u2022 Qty "+(x.qty||1)+" \u2022 "+fmtC(x.estimatedCost||0)):
-                  kind==="trf"?(x.fromLocation+" \u2192 "+x.toLocation+" \u2022 "+x.reason):
-                  (x.serviceType+" \u2022 "+(x.currentLocation||"\u2014")+" \u2022 "+fmtC(x.estimatedCost||0));
-          return e("div",{key:x.id,className:"card",style:{padding:"12px 14px",cursor:"pointer",borderLeft:"4px solid "+c},onClick:function(){_wfDetail[1]({kind:kind,item:x})}},
-            e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"start",gap:10}},
-              e("div",{style:{flex:1,minWidth:0}},
-                e("div",{style:{fontSize:10,color:"var(--text-tertiary)",fontFamily:mono,fontWeight:600}},x.id),
-                e("div",{style:{fontSize:13,fontWeight:600,margin:"2px 0"}},title),
-                e("div",{style:{fontSize:11,color:"var(--text-secondary)"}},sub)),
-              e("div",{style:{textAlign:"right",flexShrink:0}},
-                e("span",{style:{padding:"3px 9px",borderRadius:50,fontSize:10,fontWeight:700,background:c+"22",color:c,display:"inline-block"}},x.status),
-                e("div",{style:{fontSize:10,color:"var(--text-tertiary)",marginTop:4}},daysInStatus(x)+"d in stage"),
-                x.priority&&e("div",{style:{fontSize:10,fontWeight:700,color:PRIO_C[x.priority]||"#9CA3AF",marginTop:2}},x.priority))))
-        })))
-  }
-  function renderProcurement(){return renderWorkflowList("proc")}
-  function renderTransfers(){return renderWorkflowList("trf")}
-  function renderSvcOrders(){return renderWorkflowList("svo")}
 
   return e("div",null,
     // Page title
@@ -11630,13 +11647,10 @@ function AssetManagementPage(p){
 
     // Tabs
     e("div",{style:{display:"flex",gap:0,borderBottom:"2px solid var(--border)",marginBottom:20,overflowX:"auto"}},
-      tabs.map(function(tb){return e("button",{key:tb.k,className:"tab-btn "+(tb.k===_tab[0]?"tab-active":"tab-inactive"),onClick:function(){_tab[1](tb.k);_wfStatusF[1]("All")},style:{fontSize:mob?10:12,padding:mob?"8px 6px":"8px 14px",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0}},ri(tb.ic,{size:13}),tb.l)})),
+      tabs.map(function(tb){return e("button",{key:tb.k,className:"tab-btn "+(tb.k===_tab[0]?"tab-active":"tab-inactive"),onClick:function(){_tab[1](tb.k)},style:{fontSize:mob?10:12,padding:mob?"8px 6px":"8px 14px",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0}},ri(tb.ic,{size:13}),tb.l)})),
 
     _tab[0]==="dashboard"&&renderDashboard(),
     _tab[0]==="register"&&renderRegister(),
-    _tab[0]==="procurement"&&renderProcurement(),
-    _tab[0]==="transfers"&&renderTransfers(),
-    _tab[0]==="svcorders"&&renderSvcOrders(),
     _tab[0]==="utilization"&&renderUtilization(),
     _tab[0]==="service"&&renderServiceTab(),
     _tab[0]==="insights"&&renderInsights(),
@@ -11647,9 +11661,7 @@ function AssetManagementPage(p){
     _showUtil[0]&&e(UtilLogModal,{onClose:function(){_showUtil[1](false)}}),
     _detailAsset[0]&&e(AssetDetailDrawer,{asset:_detailAsset[0],onClose:function(){_detailAsset[1](null)}}),
     _showDelete[0]&&e(DeleteConfirm,{id:_showDelete[0].id,name:_showDelete[0].name,onClose:function(){_showDelete[1](null)}}),
-    _dayDetail[0]&&e(UtilDayDetailModal,{date:_dayDetail[0],onClose:function(){_dayDetail[1](null)}}),
-    _wfDetail[0]&&e(WorkflowDetailModal,{kind:_wfDetail[0].kind,item:_wfDetail[0].item,onClose:function(){_wfDetail[1](null)}}),
-    _wfShowAdd[0]&&e(WorkflowAddModal,{kind:_wfShowAdd[0],onClose:function(){_wfShowAdd[1](null)}})
+    _dayDetail[0]&&e(UtilDayDetailModal,{date:_dayDetail[0],onClose:function(){_dayDetail[1](null)}})
   )
 }
 
@@ -12691,6 +12703,154 @@ function GuestFeedbackModal(p){
         e("button",{className:"btn btn-primary",style:{flex:1},disabled:_saving[0],onClick:submit},_saving[0]?"\u23F3 Submitting...":"\uD83D\uDCE8 Submit Feedback"))))
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ExecutiveBrief — calm, mobile-first portfolio summary for BOD / GM / PMO.
+// One number first (on-track count). Three secondary stats. Tap to drill in.
+// Reuses projects array from App; no extra fetches; fully responsive.
+// ═══════════════════════════════════════════════════════════════════════════
+function ExecutiveBrief(p){
+  var projects=p.projects||[],userRole=p.userRole;
+  var mob=useMobile();
+  var _filter=useState("all"); // "all" | "ontrack" | "behind" | "atrisk"
+
+  // ── Classify each project ──
+  // On Track: actual ≥ planned − 5%
+  // Behind:   actual < planned − 5% AND no open HIGH risks AND actual ≥ planned − 15%
+  // At Risk:  any HIGH risk OR actual < planned − 15%
+  // Only active projects count (status === "Active").
+  function classify(pr){
+    var pp=Number(pr.planPct)||0, ap=Number(pr.actualPct)||0;
+    var gap=ap-pp; // negative = behind
+    var hi=Number(pr.highRiskCount)||0;
+    if(hi>0||gap<=-15)return"atrisk";
+    if(gap<=-5)return"behind";
+    return"ontrack";
+  }
+  var active=projects.filter(function(pr){return(pr.status||"Active")==="Active"});
+  var ontrack=[],behind=[],atrisk=[];
+  active.forEach(function(pr){
+    var c=classify(pr);
+    if(c==="ontrack")ontrack.push(pr);
+    else if(c==="behind")behind.push(pr);
+    else atrisk.push(pr);
+  });
+  var headline=active.length===0?0:Math.round(ontrack.length/active.length*100);
+
+  // Filtered list to render below the stats
+  var shown=_filter[0]==="ontrack"?ontrack:_filter[0]==="behind"?behind:_filter[0]==="atrisk"?atrisk:active;
+  // Sort shown by worst-variance first when filtering by problem categories, alpha otherwise
+  if(_filter[0]==="behind"||_filter[0]==="atrisk"){
+    shown=shown.slice().sort(function(a,b){return((a.actualPct||0)-(a.planPct||0))-((b.actualPct||0)-(b.planPct||0))});
+  }else{
+    shown=shown.slice().sort(function(a,b){return(a.name||"").localeCompare(b.name||"")});
+  }
+
+  // Tone matches OneHub palette
+  var C_OK="#45B369", C_WARN="#FF9F29", C_BAD="#EF4A00", C_BLUE="#487FFF";
+  var titleFont={fontFamily:"'Inter',system-ui,sans-serif",letterSpacing:"-.5px"};
+
+  // ── Stat card subcomponent ──
+  function statCard(opts){
+    var active=_filter[0]===opts.key;
+    return e("button",{
+      onClick:function(){_filter[1](active?"all":opts.key)},
+      style:{
+        flex:1, minWidth:0,
+        padding:mob?"14px 14px":"20px 22px",
+        background:active?opts.color+"15":"var(--bg-card)",
+        border:"1px solid "+(active?opts.color:"var(--border)"),
+        borderRadius:12, cursor:"pointer", textAlign:"left",
+        transition:"all .15s ease", fontFamily:"inherit",
+        boxShadow:active?"0 4px 16px "+opts.color+"22":"0 1px 2px rgba(0,0,0,.02)"
+      }
+    },
+      e("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
+        e("div",{style:{width:8,height:8,borderRadius:"50%",background:opts.color,flexShrink:0}}),
+        e("span",{style:{fontSize:10,fontWeight:700,color:"var(--text-tertiary)",letterSpacing:".8px",textTransform:"uppercase"}},opts.label)),
+      e("div",{style:Object.assign({fontSize:mob?34:42,fontWeight:800,color:opts.color,fontFamily:mono,lineHeight:1},titleFont)},opts.value),
+      e("div",{style:{fontSize:11,color:"var(--text-secondary)",marginTop:6,fontWeight:500}},opts.sub));
+  }
+
+  return e("div",{style:{maxWidth:920,margin:"0 auto",padding:mob?"16px 14px 40px":"32px 28px 60px"}},
+    // ── Header: greeting + one big number ──
+    e("div",{style:{marginBottom:mob?28:40}},
+      e("div",{style:{fontSize:11,fontWeight:600,color:"var(--text-tertiary)",letterSpacing:"1.2px",textTransform:"uppercase",marginBottom:10}},
+        userRole==="bod"?"Board Brief":userRole==="gm"?"GM Brief":userRole==="pmo"?"PMO Brief":"Executive Brief",
+        " · ", new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"})),
+      e("div",{style:Object.assign({fontSize:mob?64:88,fontWeight:800,color:headline>=80?C_OK:headline>=60?C_WARN:C_BAD,lineHeight:1,fontFamily:mono},titleFont)},
+        headline,
+        e("span",{style:{fontSize:mob?28:36,color:"var(--text-tertiary)",fontWeight:500,marginLeft:6}},"%")),
+      e("div",{style:{fontSize:mob?14:16,color:"var(--text-secondary)",marginTop:12,maxWidth:560,lineHeight:1.5}},
+        active.length===0?"No active projects to report.":
+        headline>=80?"Portfolio is healthy. "+ontrack.length+" of "+active.length+" projects are on track.":
+        headline>=60?"Most projects are healthy. "+(behind.length+atrisk.length)+" need attention.":
+        "Portfolio needs attention. "+(behind.length+atrisk.length)+" of "+active.length+" projects are behind or at risk.")),
+
+    // ── Three stat cards: On Track / Behind / At Risk ──
+    e("div",{style:{display:"grid",gridTemplateColumns:mob?"repeat(3,1fr)":"repeat(3,1fr)",gap:mob?8:14,marginBottom:mob?20:28}},
+      statCard({key:"ontrack",label:"On Track",value:ontrack.length,sub:"meeting plan",color:C_OK}),
+      statCard({key:"behind",label:"Behind",value:behind.length,sub:"5–15% behind plan",color:C_WARN}),
+      statCard({key:"atrisk",label:"At Risk",value:atrisk.length,sub:"high risks or >15% gap",color:C_BAD})),
+
+    // ── Filtered list ──
+    e("div",{style:{marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"baseline"}},
+      e("div",{style:Object.assign({fontSize:mob?16:18,fontWeight:700,color:"var(--text-primary)"},titleFont)},
+        _filter[0]==="all"?"All Active Projects":
+        _filter[0]==="ontrack"?"On Track Projects":
+        _filter[0]==="behind"?"Behind Schedule":"At Risk Projects",
+        e("span",{style:{fontSize:13,color:"var(--text-tertiary)",fontWeight:500,marginLeft:8}},shown.length+" of "+active.length)),
+      _filter[0]!=="all"&&e("button",{onClick:function(){_filter[1]("all")},style:{background:"none",border:"none",color:C_BLUE,fontSize:12,fontWeight:600,cursor:"pointer",padding:0}},"Show all →")),
+
+    e("div",{style:{display:"grid",gap:10}},
+      shown.length===0?
+        e("div",{style:{padding:"40px 20px",textAlign:"center",color:"var(--text-tertiary)",fontSize:13,background:"var(--bg-card)",border:"1px dashed var(--border)",borderRadius:12}},"No projects in this category."):
+        shown.map(function(pr){
+          var pp=Number(pr.planPct)||0, ap=Number(pr.actualPct)||0;
+          var gap=Math.round((ap-pp)*10)/10;
+          var c=classify(pr);
+          var cColor=c==="ontrack"?C_OK:c==="behind"?C_WARN:C_BAD;
+          var cLabel=c==="ontrack"?"On Track":c==="behind"?"Behind":"At Risk";
+          return e("button",{
+            key:pr.id,
+            onClick:function(){if(window._navToProject)window._navToProject(pr.id)},
+            style:{
+              width:"100%",textAlign:"left",cursor:"pointer",fontFamily:"inherit",
+              padding:mob?"14px 16px":"16px 20px",background:"var(--bg-card)",
+              border:"1px solid var(--border)",borderLeft:"3px solid "+cColor,
+              borderRadius:10,transition:"all .15s ease",
+              display:"flex",alignItems:"center",gap:14,flexWrap:mob?"wrap":"nowrap"
+            },
+            onMouseEnter:function(ev){ev.currentTarget.style.boxShadow="0 2px 12px rgba(0,0,0,.06)";ev.currentTarget.style.transform="translateY(-1px)"},
+            onMouseLeave:function(ev){ev.currentTarget.style.boxShadow="none";ev.currentTarget.style.transform="none"}
+          },
+            // Project name + manager
+            e("div",{style:{flex:1,minWidth:mob?"100%":0}},
+              e("div",{style:{fontSize:mob?14:15,fontWeight:700,color:"var(--text-primary)",marginBottom:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},pr.name),
+              e("div",{style:{fontSize:11,color:"var(--text-tertiary)"}},
+                (pr.manager||"—")+(pr.city?" · "+pr.city:"")+(pr.country&&pr.country!=="Indonesia"?", "+pr.country:""))),
+            // Progress numbers
+            e("div",{style:{display:"flex",alignItems:"center",gap:mob?12:18,flexShrink:0}},
+              e("div",{style:{textAlign:"right"}},
+                e("div",{style:{fontSize:11,color:"var(--text-tertiary)",marginBottom:2}},"Plan"),
+                e("div",{style:{fontSize:14,fontWeight:700,fontFamily:mono,color:C_BLUE}},pp+"%")),
+              e("div",{style:{textAlign:"right"}},
+                e("div",{style:{fontSize:11,color:"var(--text-tertiary)",marginBottom:2}},"Actual"),
+                e("div",{style:{fontSize:14,fontWeight:700,fontFamily:mono,color:cColor}},ap+"%")),
+              e("div",{style:{textAlign:"right",minWidth:48}},
+                e("div",{style:{fontSize:11,color:"var(--text-tertiary)",marginBottom:2}},"Gap"),
+                e("div",{style:{fontSize:14,fontWeight:700,fontFamily:mono,color:gap>=0?C_OK:gap>=-5?"var(--text-secondary)":gap>=-15?C_WARN:C_BAD}},(gap>=0?"+":"")+gap+"%")),
+              (Number(pr.highRiskCount)||0)>0&&e("div",{style:{padding:"3px 8px",background:"rgba(239,74,0,.1)",color:C_BAD,borderRadius:6,fontSize:10,fontWeight:700,whiteSpace:"nowrap"}},pr.highRiskCount+" HIGH"),
+              !mob&&e("div",{style:{padding:"3px 9px",background:cColor+"18",color:cColor,borderRadius:50,fontSize:10,fontWeight:700,whiteSpace:"nowrap"}},cLabel))
+          )
+        })),
+
+    // ── Footnote about classification ──
+    e("div",{style:{marginTop:mob?22:30,padding:"14px 16px",background:"var(--bg-surface)",borderRadius:8,fontSize:11,color:"var(--text-tertiary)",lineHeight:1.6}},
+      e("strong",{style:{color:"var(--text-secondary)"}},"How we classify: "),
+      "On Track = actual within 5% of plan. Behind = 5–15% behind plan. At Risk = >15% behind OR has an open HIGH-level risk. Tap any project to open its full detail.")
+  );
+}
+
 
 function App(){
   // Session persistence via sessionStorage (survives refresh, clears on tab close)
@@ -12718,7 +12878,15 @@ function App(){
   var _notifications=useState([]);
   var _showProfile=useState(false);
   var _showSearch=useState(false);
-  var _page=useState(savedSession&&savedSession.lastPage?savedSession.lastPage:"mgmt"),page=_page[0];
+  // Landing page rules:
+  //   BOD / GM  → always start on the Brief. They can navigate freely from there,
+  //               but every fresh session begins on the summary view.
+  //   Others    → resume on their last page if known, else go to Management Dashboard.
+  var _page=useState(function(){
+    var r=savedSession?savedSession.role:"";
+    if(r==="bod"||r==="gm")return"exec_brief";
+    return(savedSession&&savedSession.lastPage)?savedSession.lastPage:"mgmt";
+  }()),page=_page[0];
   var _forceR=useState(false); // force re-render on theme/lang toggle
   var _dashExpand=useState(true),_digiExpand=useState(false);
   var _selectedProject=useState(null),selectedProject=_selectedProject[0];
@@ -12937,10 +13105,10 @@ function App(){
       window._userCtx={role:role||"bod",name:name||"User",assignedProjects:ap||""};
       var landing="mgmt";
       if(role==="project_owner")landing="mgmt";
-      else if(role==="bod")landing="mgmt";
+      else if(role==="bod")landing="exec_brief"; // BOD lands on the calm summary brief
       else if(role==="pmo")landing="mgmt";
       else if(role==="admin")landing="mgmt";
-      else if(role==="gm")landing="mgmt"; // GM lands on management dashboard scoped to assigned projects
+      else if(role==="gm")landing="exec_brief"; // GM lands on the calm summary brief
       else if(role==="viewer")landing="mgmt"; // Internal viewer lands on read-only management dashboard
       else if(role==="collaborator")landing="tasks"; // Collaborators land on their workspace tasks
       else if(role==="external"&&modList.indexOf("crm")>=0)landing="crm";
@@ -13005,6 +13173,8 @@ function App(){
         e("li",{className:"sidebar-divider"},t("sb_dashboard")),
         // BOD Command Center — visible only to Admin / BOD
         (userRole==="admin"||userRole==="bod")&&e("li",{className:"sidebar-item"+(page==="bod_center"?" active":"")},e("button",{onClick:function(){_page[1]("bod_center");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("layout-dashboard",{size:16})," ",t("sb_bod"))),
+        // Executive Brief — calm portfolio summary for BOD / GM / PMO / admin
+        (userRole==="admin"||userRole==="bod"||userRole==="gm"||userRole==="pmo")&&e("li",{className:"sidebar-item"+(page==="exec_brief"?" active":"")},e("button",{onClick:function(){_page[1]("exec_brief");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("zap",{size:16})," Brief")),
         !isExtGuest&&userMods.indexOf("dashboard")>=0&&e("li",{className:"sidebar-item"+(page==="mgmt"&&!selectedProject?" active":"")},e("button",{onClick:function(){_page[1]("mgmt");_selectedProject[1](null);_sidebarOpen[1](false)}},icon("home",{size:16})," ",t("mgmtDash"))),
         // Project sub-items - for external users, only show categories with assigned projects
         (function(){var hasOverseas=projects.some(function(p2){return(p2.classification||"Domestic")==="Overseas"});
@@ -13163,6 +13333,7 @@ function App(){
             })(),userRole:userRole,userName:userName,initialTab:_targetTab[0],onTabChange:function(t){_targetTab[1](t)},onBack:function(){_selectedProject[1](null);_targetTab[1](null);loadProjects()}})
           :page==="crm"?e(CRMPage,{userRole:userRole,userName:userName,userScope:_userScope[0],scopeFilter:_scopeFilter[0],onScopeChange:function(v){_scopeFilter[1](v);window._scopeFilter=v},branches:_branches[0],regions:_regions[0]})
           :page==="bod_center"?e(BODCommandCenter,{userRole:userRole,userName:userName})
+          :page==="exec_brief"?e(ExecutiveBrief,{projects:projects,userRole:userRole,userName:userName})
           :page==="risks"?e(RiskManagementPage,{userRole:userRole,userName:userName})
           :page==="library"?e(LibraryPage,{userRole:userRole,userName:userName,templateProjects:templateProjects})
           :page==="bd"?e(BDPage,{admin:canManageUsers||userRole==="admin"||userRole==="pmo",userName:userName,userRole:userRole})
